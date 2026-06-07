@@ -3,7 +3,8 @@
 import { useState, useEffect } from "react";
 import Link from "next/link";
 import { motion, AnimatePresence } from "framer-motion";
-import { Menu, X, TrendingUp } from "lucide-react";
+import Image from "next/image";
+import { Menu, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
@@ -40,8 +41,8 @@ export function Navbar() {
         <div className="flex items-center justify-between h-16 md:h-20">
           {/* Logo */}
           <Link href="/" className="flex items-center gap-2.5 group">
-            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-indigo-500 to-violet-600 flex items-center justify-center shadow-glow-xs group-hover:shadow-glow-sm transition-shadow duration-300">
-              <TrendingUp className="w-4 h-4 text-white" strokeWidth={2.5} />
+            <div className="w-8 h-8 flex items-center justify-center">
+              <Image src="/klar-removebg-preview.png" alt="KlarTrade logo" width={48} height={48} className="object-contain" />
             </div>
             <span className="text-[17px] font-bold font-display tracking-tight text-white">
               Klar<span className="text-indigo-400">trade</span>

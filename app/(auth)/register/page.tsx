@@ -2,8 +2,10 @@
 
 import { useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
-import { TrendingUp, Eye, EyeOff, Check, ArrowRight } from "lucide-react";
+import Image from "next/image";
+import { Eye, EyeOff, Check, ArrowRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
@@ -34,18 +36,41 @@ function PasswordStrength({ password }: { password: string }) {
 }
 
 export default function RegisterPage() {
+  const router = useRouter();
   const [showPw, setShowPw] = useState(false);
   const [form, setForm] = useState({ name: "", email: "", password: "", confirm: "" });
   const [agreed, setAgreed] = useState(false);
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const set = (k: string) => (e: React.ChangeEvent<HTMLInputElement>) => setForm((f) => ({ ...f, [k]: e.target.value }));
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (form.password !== form.confirm) {
+      setError("Passwords do not match");
+      return;
+    }
     setLoading(true);
-    setTimeout(() => { setLoading(false); setSuccess(true); }, 1600);
+    setError(null);
+
+    const res = await fetch("/api/auth/register", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email: form.email, password: form.password }),
+    });
+
+    const json = await res.json();
+    setLoading(false);
+
+    if (!res.ok) {
+      setError(json.error ?? "Registration failed");
+      return;
+    }
+
+    setSuccess(true);
+    router.refresh();
   };
 
   return (
@@ -60,8 +85,8 @@ export default function RegisterPage() {
         className="w-full max-w-sm relative"
       >
         <div className="flex items-center justify-center gap-2.5 mb-8">
-          <div className="w-9 h-9 rounded-xl bg-[#03588C] flex items-center justify-center shadow-glow-sm">
-            <TrendingUp className="w-[18px] h-[18px] text-white" strokeWidth={2.5} />
+          <div className="w-9 h-9 flex items-center justify-center">
+            <Image src="/klar-removebg-preview.png" alt="KlarTrade logo" width={52} height={52} className="object-contain" />
           </div>
           <span className="text-lg font-bold text-[#F2F0EB] tracking-tight">
             Klar<span className="text-[#4BA3D4]">Trade</span>
@@ -149,10 +174,14 @@ export default function RegisterPage() {
                     </div>
                     <span className="text-xs text-[#6B7280] leading-relaxed">
                       I agree to the{" "}
-                      <a href="#" className="text-[#4BA3D4] hover:underline">Terms of Service</a> and{" "}
+                      <Link href="/terms" className="text-[#4BA3D4] hover:underline">Terms of Service</Link> and{" "}
                       <a href="#" className="text-[#4BA3D4] hover:underline">Privacy Policy</a>
                     </span>
                   </label>
+
+                  {error && (
+                    <p className="text-xs text-red-400 bg-red-500/10 border border-red-500/20 rounded-xl px-3 py-2">{error}</p>
+                  )}
 
                   <Button type="submit" className="w-full h-11" disabled={loading || !agreed}>
                     {loading ? (
@@ -165,20 +194,6 @@ export default function RegisterPage() {
                     )}
                   </Button>
                 </form>
-
-                <div className="flex items-center gap-3 my-5">
-                  <div className="flex-1 h-px bg-white/[0.07]" />
-                  <span className="text-xs text-[#6B7280]">or</span>
-                  <div className="flex-1 h-px bg-white/[0.07]" />
-                </div>
-
-                <div className="grid grid-cols-2 gap-3">
-                  {["Google", "Apple"].map((p) => (
-                    <button key={p} className="flex items-center justify-center gap-2 bg-white/[0.04] border border-white/[0.08] rounded-xl px-4 py-2.5 text-sm text-[#F2F0EB] hover:bg-white/[0.08] transition-all">
-                      {p}
-                    </button>
-                  ))}
-                </div>
 
                 <p className="text-center text-sm text-[#6B7280] mt-6">
                   Already have an account?{" "}

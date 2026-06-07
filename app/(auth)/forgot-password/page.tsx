@@ -3,18 +3,36 @@
 import { useState } from "react";
 import Link from "next/link";
 import { motion, AnimatePresence } from "framer-motion";
-import { TrendingUp, ArrowRight, Check, ArrowLeft } from "lucide-react";
+import Image from "next/image";
+import { ArrowRight, Check, ArrowLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 export default function ForgotPasswordPage() {
   const [email, setEmail] = useState("");
   const [sent, setSent] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
-    setTimeout(() => { setLoading(false); setSent(true); }, 1400);
+    setError(null);
+
+    const res = await fetch("/api/auth/forgot-password", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email }),
+    });
+
+    const json = await res.json();
+    setLoading(false);
+
+    if (!res.ok) {
+      setError(json.error ?? "Failed to send reset link");
+      return;
+    }
+
+    setSent(true);
   };
 
   return (
@@ -29,8 +47,8 @@ export default function ForgotPasswordPage() {
         className="w-full max-w-sm relative"
       >
         <div className="flex items-center justify-center gap-2.5 mb-8">
-          <div className="w-9 h-9 rounded-xl bg-[#03588C] flex items-center justify-center shadow-glow-sm">
-            <TrendingUp className="w-[18px] h-[18px] text-white" strokeWidth={2.5} />
+          <div className="w-9 h-9 flex items-center justify-center">
+            <Image src="/klar-removebg-preview.png" alt="KlarTrade logo" width={52} height={52} className="object-contain" />
           </div>
           <span className="text-lg font-bold text-[#F2F0EB] tracking-tight">
             Klar<span className="text-[#4BA3D4]">Trade</span>
@@ -73,6 +91,10 @@ export default function ForgotPasswordPage() {
                       className="w-full bg-white/[0.04] border border-white/[0.08] rounded-xl px-4 py-3 text-sm text-[#F2F0EB] placeholder-[#6B7280] focus:outline-none focus:border-[#03588C]/60 transition-all"
                     />
                   </div>
+
+                  {error && (
+                    <p className="text-xs text-red-400 bg-red-500/10 border border-red-500/20 rounded-xl px-3 py-2">{error}</p>
+                  )}
 
                   <Button type="submit" className="w-full h-11" disabled={loading || !email}>
                     {loading ? (

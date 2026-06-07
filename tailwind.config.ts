@@ -80,6 +80,17 @@ const config: Config = {
         shimmer: "shimmer 2s linear infinite",
         "border-glow": "border-glow 4s ease-in-out infinite",
         "gradient-x": "gradient-x 8s ease infinite",
+        // biome animations
+        "storm-drift": "storm-drift 7s ease-in-out infinite",
+        "lightning-flash": "lightning-flash 11s linear infinite",
+        "summit-mist": "summit-mist 8s ease-in forwards",
+        "summit-star": "summit-star 3.5s ease-in-out infinite",
+        "ocean-swell": "ocean-swell 6s ease-in-out infinite",
+        "biolum-pulse": "biolum-pulse 4s ease-in-out infinite",
+        "river-flow": "river-flow 12s linear infinite",
+        "thaw-shimmer": "thaw-shimmer 2.8s ease-in-out infinite",
+        "forest-dapple": "forest-dapple 10s ease-in-out infinite",
+        "light-ray": "light-ray 5s ease-in-out infinite",
       },
       keyframes: {
         float: {
@@ -103,6 +114,49 @@ const config: Config = {
         "gradient-x": {
           "0%, 100%": { backgroundPosition: "0% 50%" },
           "50%": { backgroundPosition: "100% 50%" },
+        },
+        // biome keyframes
+        "storm-drift": {
+          "0%, 100%": { transform: "translateX(0) translateY(0)", opacity: "0.5" },
+          "50%": { transform: "translateX(-22px) translateY(8px)", opacity: "0.75" },
+        },
+        "lightning-flash": {
+          "0%, 87%, 91%, 95%, 100%": { opacity: "0" },
+          "88%, 90%": { opacity: "0.7" },
+          "92%, 94%": { opacity: "0.35" },
+        },
+        "summit-mist": {
+          "0%": { transform: "translateY(0) scale(1)", opacity: "0.45" },
+          "100%": { transform: "translateY(-70px) scale(1.12)", opacity: "0" },
+        },
+        "summit-star": {
+          "0%, 100%": { opacity: "0.1", transform: "scale(1)" },
+          "50%": { opacity: "0.9", transform: "scale(1.5)" },
+        },
+        "ocean-swell": {
+          "0%, 100%": { transform: "translateY(0) scaleX(1)", opacity: "0.35" },
+          "50%": { transform: "translateY(-14px) scaleX(1.02)", opacity: "0.6" },
+        },
+        "biolum-pulse": {
+          "0%, 100%": { opacity: "0.08", transform: "scale(1)" },
+          "50%": { opacity: "0.4", transform: "scale(1.5)" },
+        },
+        "river-flow": {
+          "0%": { transform: "translateX(0%)", opacity: "0.4" },
+          "100%": { transform: "translateX(-50%)", opacity: "0.4" },
+        },
+        "thaw-shimmer": {
+          "0%, 100%": { opacity: "0.12" },
+          "50%": { opacity: "0.55" },
+        },
+        "forest-dapple": {
+          "0%, 100%": { transform: "translate(0,0) rotate(0deg)", opacity: "0.28" },
+          "33%": { transform: "translate(10px,-6px) rotate(1.5deg)", opacity: "0.48" },
+          "66%": { transform: "translate(-6px,4px) rotate(-1deg)", opacity: "0.3" },
+        },
+        "light-ray": {
+          "0%, 100%": { opacity: "0.06" },
+          "50%": { opacity: "0.18" },
         },
       },
     },

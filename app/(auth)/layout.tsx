@@ -1,5 +1,13 @@
+import type { Metadata } from "next";
 import Link from "next/link";
-import { TrendingUp } from "lucide-react";
+import Image from "next/image";
+
+export const metadata: Metadata = {
+  title: {
+    template: "%s — KlarTrade",
+    default: "KlarTrade",
+  },
+};
 
 export default function AuthLayout({ children }: { children: React.ReactNode }) {
   return (
@@ -7,8 +15,8 @@ export default function AuthLayout({ children }: { children: React.ReactNode }) 
       {/* Header */}
       <header className="px-6 py-5 border-b border-white/[0.05]">
         <Link href="/" className="inline-flex items-center gap-2.5">
-          <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-indigo-500 to-violet-600 flex items-center justify-center shadow-glow-xs">
-            <TrendingUp className="w-4 h-4 text-white" strokeWidth={2.5} />
+          <div className="w-8 h-8 flex items-center justify-center">
+            <Image src="/klar-removebg-preview.png" alt="KlarTrade logo" width={48} height={48} className="object-contain" />
           </div>
           <span className="text-[17px] font-bold font-display text-white">
             Klar<span className="text-indigo-400">trade</span>

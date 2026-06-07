@@ -1,12 +1,13 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
+import { useRouter } from "next/navigation";
 import { Header } from "@/components/dashboard/Header";
 import {
   User, Bell, Shield, CreditCard, HelpCircle, Info, Plug, SlidersHorizontal,
   Camera, Eye, EyeOff, Check, ChevronRight, Zap, Globe, Download, Trash2,
-  LogOut, RefreshCw, Plus, X, AlertTriangle, Lock, Smartphone, Key,
-  CheckCircle, Clock,
+  LogOut, RefreshCw, Plus, AlertTriangle, Lock, Smartphone, Key,
+  CheckCircle, Loader2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -25,16 +26,15 @@ const tabs = [
 
 type TabId = (typeof tabs)[number]["id"];
 
-const brokers = [
-  { name: "cTrader", logo: "CT", status: "connected", account: "#4821093", sync: "2 min ago", color: "#03588C" },
-  { name: "TradeLocker", logo: "TL", status: "connected", account: "#TL-88234", sync: "5 min ago", color: "#22C55E" },
-  { name: "Tradovate", logo: "TV", status: "error", account: "#tv-29012", sync: "Failed", color: "#EF4444" },
-  { name: "MetaTrader 5", logo: "MT", status: "disconnected", account: "—", sync: "—", color: "#6B7280" },
-  { name: "Interactive Brokers", logo: "IB", status: "disconnected", account: "—", sync: "—", color: "#6B7280" },
-  { name: "NinjaTrader", logo: "NT", status: "disconnected", account: "—", sync: "—", color: "#6B7280" },
-  { name: "Rithmic", logo: "RI", status: "disconnected", account: "—", sync: "—", color: "#6B7280" },
-  { name: "Alpaca", logo: "AL", status: "disconnected", account: "—", sync: "—", color: "#6B7280" },
-];
+const BROKER_REGISTRY: Record<string, { name: string; logo: string; color: string }> = {
+  mt5: { name: "MetaTrader 5", logo: "MT", color: "#0099CC" },
+  tradelocker: { name: "TradeLocker", logo: "TL", color: "#22C55E" },
+  ctrader: { name: "cTrader", logo: "CT", color: "#03588C" },
+  tradovate: { name: "Tradovate", logo: "TV", color: "#9B59B6" },
+  interactive_brokers: { name: "Interactive Brokers", logo: "IB", color: "#E74C3C" },
+  ninjatrader: { name: "NinjaTrader", logo: "NT", color: "#F39C12" },
+  alpaca: { name: "Alpaca", logo: "AL", color: "#27AE60" },
+};
 
 const routineSteps = [
   { id: 1, label: "Check economic calendar", enabled: true },
@@ -43,7 +43,7 @@ const routineSteps = [
   { id: 4, label: "Set daily risk limit", enabled: true },
   { id: 5, label: "Write trading intention", enabled: false },
   { id: 6, label: "Review yesterday's trades", enabled: true },
-  { id: 7, label: "Run Sanctuary session", enabled: false },
+  { id: 7, label: "Run Refuge session", enabled: false },
 ];
 
 const guardrails = [
@@ -54,14 +54,126 @@ const guardrails = [
   { id: "profit_protect", label: "Profit Protection", desc: "Stop trading after hitting daily profit target", value: "1000", unit: "$", enabled: false },
 ];
 
+interface BrokerConnection {
+  id: string;
+  broker: string;
+  display_name?: string;
+  account_id?: string;
+  server?: string;
+  status: string;
+  last_sync?: string;
+}
+
 export default function SettingsPage() {
+  const router = useRouter();
   const [activeTab, setActiveTab] = useState<TabId>("account");
+
+  // Profile state
+  const [profile, setProfile] = useState({ email: "", full_name: "", username: "", timezone: "(GMT+0) London", experience: "Intermediate" });
+  const [profileLoading, setProfileLoading] = useState(true);
+  const [profileSaving, setProfileSaving] = useState(false);
+  const [savedIndicator, setSavedIndicator] = useState(false);
+
+  // Security state
   const [showPassword, setShowPassword] = useState(false);
+  const [passwordForm, setPasswordForm] = useState({ current: "", new: "", confirm: "" });
+  const [passwordError, setPasswordError] = useState<string | null>(null);
+  const [passwordSuccess, setPasswordSuccess] = useState(false);
+  const [passwordLoading, setPasswordLoading] = useState(false);
+
+  // Integrations state
+  const [connections, setConnections] = useState<BrokerConnection[]>([]);
+  const [connectionsLoading, setConnectionsLoading] = useState(false);
+
+  // UI state
   const [routineItems, setRoutineItems] = useState(routineSteps);
   const [guardrailItems, setGuardrailItems] = useState(guardrails);
   const [twoFAEnabled, setTwoFAEnabled] = useState(false);
-  const [billingPeriod, setBillingPeriod] = useState<"monthly" | "yearly">("monthly");
-  const [savedIndicator, setSavedIndicator] = useState(false);
+
+  useEffect(() => {
+    fetch("/api/settings/profile")
+      .then((r) => r.json())
+      .then((data) => {
+        if (data.email) {
+          setProfile({
+            email: data.email,
+            full_name: data.user_metadata?.full_name ?? "",
+            username: data.user_metadata?.username ?? "",
+            timezone: data.user_metadata?.timezone ?? "(GMT+0) London",
+            experience: data.user_metadata?.experience ?? "Intermediate",
+          });
+        }
+      })
+      .finally(() => setProfileLoading(false));
+  }, []);
+
+  const loadConnections = useCallback(() => {
+    setConnectionsLoading(true);
+    fetch("/api/brokers/list")
+      .then((r) => r.json())
+      .then((data) => setConnections(data.connections ?? []))
+      .finally(() => setConnectionsLoading(false));
+  }, []);
+
+  useEffect(() => {
+    if (activeTab === "integrations") loadConnections();
+  }, [activeTab, loadConnections]);
+
+  const initials = profile.full_name
+    ? profile.full_name.split(" ").map((n: string) => n[0]).join("").toUpperCase().slice(0, 2)
+    : profile.email?.slice(0, 2).toUpperCase() ?? "?";
+
+  const handleSaveProfile = async () => {
+    setProfileSaving(true);
+    const res = await fetch("/api/settings/profile", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        full_name: profile.full_name,
+        username: profile.username,
+        timezone: profile.timezone,
+        experience: profile.experience,
+      }),
+    });
+    setProfileSaving(false);
+    if (res.ok) {
+      setSavedIndicator(true);
+      setTimeout(() => setSavedIndicator(false), 2000);
+    }
+  };
+
+  const handleChangePassword = async () => {
+    setPasswordError(null);
+    setPasswordSuccess(false);
+    if (passwordForm.new !== passwordForm.confirm) {
+      setPasswordError("New passwords do not match");
+      return;
+    }
+    if (passwordForm.new.length < 8) {
+      setPasswordError("Password must be at least 8 characters");
+      return;
+    }
+    setPasswordLoading(true);
+    const res = await fetch("/api/settings/password", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ current_password: passwordForm.current, new_password: passwordForm.new }),
+    });
+    const data = await res.json();
+    setPasswordLoading(false);
+    if (res.ok) {
+      setPasswordSuccess(true);
+      setPasswordForm({ current: "", new: "", confirm: "" });
+    } else {
+      setPasswordError(data.error ?? "Failed to update password");
+    }
+  };
+
+  const handleLogout = async () => {
+    await fetch("/api/auth/logout", { method: "POST" });
+    router.push("/login");
+    router.refresh();
+  };
 
   const toggleRoutineStep = (id: number) => {
     setRoutineItems((items) => items.map((item) => item.id === id ? { ...item, enabled: !item.enabled } : item));
@@ -71,10 +183,17 @@ export default function SettingsPage() {
     setGuardrailItems((items) => items.map((item) => item.id === id ? { ...item, enabled: !item.enabled } : item));
   };
 
-  const handleSave = () => {
-    setSavedIndicator(true);
-    setTimeout(() => setSavedIndicator(false), 2000);
-  };
+  const allBrokers = Object.entries(BROKER_REGISTRY).map(([id, info]) => {
+    const conn = connections.find((c) => c.broker === id);
+    return {
+      id,
+      ...info,
+      status: conn?.status ?? "disconnected",
+      account: conn?.account_id ?? "—",
+      sync: conn?.last_sync ? new Date(conn.last_sync).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "—",
+      connectionId: conn?.id,
+    };
+  });
 
   return (
     <div className="flex flex-col flex-1 overflow-hidden">
@@ -82,9 +201,11 @@ export default function SettingsPage() {
         title="Settings"
         subtitle="Manage your account, integrations, and trading preferences."
         action={
-          <Button size="sm" onClick={handleSave}>
-            {savedIndicator ? <><CheckCircle className="w-3.5 h-3.5" /> Saved!</> : "Save Changes"}
-          </Button>
+          activeTab === "account" ? (
+            <Button size="sm" onClick={handleSaveProfile} disabled={profileSaving}>
+              {profileSaving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : savedIndicator ? <><CheckCircle className="w-3.5 h-3.5" /> Saved!</> : "Save Changes"}
+            </Button>
+          ) : undefined
         }
       />
 
@@ -104,9 +225,11 @@ export default function SettingsPage() {
               {label}
             </button>
           ))}
-
           <div className="flex-1" />
-          <button className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-xs font-medium text-red-400 hover:bg-red-500/10 transition-all">
+          <button
+            onClick={handleLogout}
+            className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-xs font-medium text-red-400 hover:bg-red-500/10 transition-all"
+          >
             <LogOut className="w-4 h-4" /> Sign Out
           </button>
         </div>
@@ -123,39 +246,57 @@ export default function SettingsPage() {
                   <div className="glass rounded-2xl p-6 space-y-5">
                     <div className="flex items-center gap-5">
                       <div className="relative">
-                        <div className="w-16 h-16 rounded-2xl bg-[#03588C]/30 flex items-center justify-center text-xl font-bold text-white">FR</div>
+                        <div className="w-16 h-16 rounded-2xl bg-[#03588C]/30 flex items-center justify-center text-xl font-bold text-white">
+                          {profileLoading ? <Loader2 className="w-5 h-5 animate-spin text-[#6B7280]" /> : initials}
+                        </div>
                         <button className="absolute -bottom-1 -right-1 w-6 h-6 rounded-full bg-[#03588C] flex items-center justify-center">
                           <Camera className="w-3 h-3 text-white" />
                         </button>
                       </div>
                       <div>
-                        <p className="font-semibold text-[#F2F0EB]">Frederic Rigaudson</p>
-                        <p className="text-sm text-[#6B7280]">frigaudson1997@gmail.com</p>
+                        <p className="font-semibold text-[#F2F0EB]">{profile.full_name || profile.email}</p>
+                        <p className="text-sm text-[#6B7280]">{profile.email}</p>
                         <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-[#D9CA82]/10 text-[#D9CA82] border border-[#D9CA82]/20">Pro Plan</span>
                       </div>
                     </div>
 
                     <div className="grid grid-cols-2 gap-4">
-                      {[
-                        { label: "First Name", value: "Frederic" },
-                        { label: "Last Name", value: "Rigaudson" },
-                        { label: "Email", value: "frigaudson1997@gmail.com" },
-                        { label: "Username", value: "@frig" },
-                      ].map(({ label, value }) => (
-                        <div key={label}>
-                          <label className="text-[11px] font-semibold text-[#6B7280] uppercase tracking-wide block mb-1.5">{label}</label>
-                          <input
-                            defaultValue={value}
-                            className="w-full bg-white/[0.04] border border-white/[0.08] rounded-xl px-3 py-2.5 text-sm text-[#F2F0EB] focus:outline-none focus:border-[#03588C]/50"
-                          />
-                        </div>
-                      ))}
+                      <div>
+                        <label className="text-[11px] font-semibold text-[#6B7280] uppercase tracking-wide block mb-1.5">Full Name</label>
+                        <input
+                          value={profile.full_name}
+                          onChange={(e) => setProfile((p) => ({ ...p, full_name: e.target.value }))}
+                          placeholder="Your full name"
+                          className="w-full bg-white/[0.04] border border-white/[0.08] rounded-xl px-3 py-2.5 text-sm text-[#F2F0EB] focus:outline-none focus:border-[#03588C]/50"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-[11px] font-semibold text-[#6B7280] uppercase tracking-wide block mb-1.5">Username</label>
+                        <input
+                          value={profile.username}
+                          onChange={(e) => setProfile((p) => ({ ...p, username: e.target.value }))}
+                          placeholder="@username"
+                          className="w-full bg-white/[0.04] border border-white/[0.08] rounded-xl px-3 py-2.5 text-sm text-[#F2F0EB] focus:outline-none focus:border-[#03588C]/50"
+                        />
+                      </div>
+                      <div className="col-span-2">
+                        <label className="text-[11px] font-semibold text-[#6B7280] uppercase tracking-wide block mb-1.5">Email</label>
+                        <input
+                          value={profile.email}
+                          readOnly
+                          className="w-full bg-white/[0.02] border border-white/[0.05] rounded-xl px-3 py-2.5 text-sm text-[#6B7280] cursor-not-allowed"
+                        />
+                      </div>
                     </div>
 
                     <div>
                       <label className="text-[11px] font-semibold text-[#6B7280] uppercase tracking-wide block mb-1.5">Timezone</label>
-                      <select className="w-full bg-white/[0.04] border border-white/[0.08] rounded-xl px-3 py-2.5 text-sm text-[#F2F0EB] focus:outline-none">
-                        {["(GMT-5) Eastern Time", "(GMT-6) Central Time", "(GMT-8) Pacific Time", "(GMT+0) London", "(GMT+1) Paris"].map((tz) => (
+                      <select
+                        value={profile.timezone}
+                        onChange={(e) => setProfile((p) => ({ ...p, timezone: e.target.value }))}
+                        className="w-full bg-white/[0.04] border border-white/[0.08] rounded-xl px-3 py-2.5 text-sm text-[#F2F0EB] focus:outline-none"
+                      >
+                        {["(GMT-5) Eastern Time", "(GMT-6) Central Time", "(GMT-8) Pacific Time", "(GMT+0) London", "(GMT+1) Paris", "(GMT+2) Cairo", "(GMT+8) Singapore", "(GMT+9) Tokyo"].map((tz) => (
                           <option key={tz}>{tz}</option>
                         ))}
                       </select>
@@ -165,9 +306,11 @@ export default function SettingsPage() {
                       <label className="text-[11px] font-semibold text-[#6B7280] uppercase tracking-wide block mb-1.5">Trading Experience</label>
                       <div className="flex gap-2">
                         {["Beginner", "Intermediate", "Advanced", "Professional"].map((level) => (
-                          <button key={level}
+                          <button
+                            key={level}
+                            onClick={() => setProfile((p) => ({ ...p, experience: level }))}
                             className={cn("px-3 py-2 rounded-xl text-xs font-medium border transition-all",
-                              level === "Advanced"
+                              profile.experience === level
                                 ? "bg-[#03588C] text-white border-[#03588C]"
                                 : "bg-white/[0.04] border-white/[0.08] text-[#6B7280] hover:text-[#F2F0EB]")}
                           >
@@ -305,48 +448,57 @@ export default function SettingsPage() {
                 <div>
                   <h2 className="text-base font-bold text-[#F2F0EB] mb-1">Connected Brokers</h2>
                   <p className="text-sm text-[#6B7280] mb-4">Link your broker accounts to auto-import trades and sync data.</p>
-                  <div className="space-y-2">
-                    {brokers.map((broker) => (
-                      <div key={broker.name} className="glass rounded-2xl px-4 py-3 flex items-center gap-4">
-                        <div
-                          className="w-9 h-9 rounded-xl flex items-center justify-center text-xs font-bold text-white flex-shrink-0"
-                          style={{ background: broker.status === "connected" ? broker.color : "#1a1d26" }}
-                        >
-                          {broker.logo}
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <p className="text-sm font-semibold text-[#F2F0EB]">{broker.name}</p>
-                          {broker.status === "connected" && (
-                            <p className="text-[10px] text-[#6B7280]">{broker.account} · Last sync: {broker.sync}</p>
-                          )}
-                          {broker.status === "error" && (
-                            <p className="text-[10px] text-red-400">Connection error — {broker.sync}</p>
-                          )}
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <div className={cn("flex items-center gap-1.5 text-[10px] font-semibold px-2.5 py-1 rounded-full",
-                            broker.status === "connected" ? "bg-[#22C55E]/10 text-[#22C55E]" :
-                            broker.status === "error" ? "bg-red-500/10 text-red-400" :
-                            "bg-white/[0.05] text-[#6B7280]")}>
-                            <div className={cn("w-1.5 h-1.5 rounded-full",
-                              broker.status === "connected" ? "bg-[#22C55E]" :
-                              broker.status === "error" ? "bg-red-500" :
-                              "bg-[#6B7280]")} />
-                            {broker.status === "connected" ? "Connected" : broker.status === "error" ? "Error" : "Disconnected"}
+                  {connectionsLoading ? (
+                    <div className="flex items-center justify-center h-24">
+                      <Loader2 className="w-5 h-5 animate-spin text-[#6B7280]" />
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      {allBrokers.map((broker) => (
+                        <div key={broker.id} className="glass rounded-2xl px-4 py-3 flex items-center gap-4">
+                          <div
+                            className="w-9 h-9 rounded-xl flex items-center justify-center text-xs font-bold text-white flex-shrink-0"
+                            style={{ background: broker.status === "connected" ? broker.color : "#1a1d26" }}
+                          >
+                            {broker.logo}
                           </div>
-                          {broker.status === "connected" ? (
-                            <button className="w-7 h-7 rounded-lg bg-white/[0.04] flex items-center justify-center text-[#6B7280] hover:text-[#F2F0EB] transition-all">
-                              <RefreshCw className="w-3.5 h-3.5" />
-                            </button>
-                          ) : (
-                            <button className="text-[11px] font-semibold px-3 py-1.5 rounded-xl bg-[#03588C]/15 text-[#4BA3D4] border border-[#03588C]/25 hover:bg-[#03588C]/25 transition-all">
-                              Connect
-                            </button>
-                          )}
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-semibold text-[#F2F0EB]">{broker.name}</p>
+                            {broker.status === "connected" && (
+                              <p className="text-[10px] text-[#6B7280]">{broker.account} · Last sync: {broker.sync}</p>
+                            )}
+                            {broker.status === "error" && (
+                              <p className="text-[10px] text-red-400">Connection error</p>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <div className={cn("flex items-center gap-1.5 text-[10px] font-semibold px-2.5 py-1 rounded-full",
+                              broker.status === "connected" ? "bg-[#22C55E]/10 text-[#22C55E]" :
+                              broker.status === "error" ? "bg-red-500/10 text-red-400" :
+                              "bg-white/[0.05] text-[#6B7280]")}>
+                              <div className={cn("w-1.5 h-1.5 rounded-full",
+                                broker.status === "connected" ? "bg-[#22C55E]" :
+                                broker.status === "error" ? "bg-red-500" :
+                                "bg-[#6B7280]")} />
+                              {broker.status === "connected" ? "Connected" : broker.status === "error" ? "Error" : "Disconnected"}
+                            </div>
+                            {broker.status === "connected" ? (
+                              <button onClick={loadConnections} className="w-7 h-7 rounded-lg bg-white/[0.04] flex items-center justify-center text-[#6B7280] hover:text-[#F2F0EB] transition-all">
+                                <RefreshCw className="w-3.5 h-3.5" />
+                              </button>
+                            ) : (
+                              <button
+                                onClick={() => router.push("/brokers")}
+                                className="text-[11px] font-semibold px-3 py-1.5 rounded-xl bg-[#03588C]/15 text-[#4BA3D4] border border-[#03588C]/25 hover:bg-[#03588C]/25 transition-all"
+                              >
+                                Connect
+                              </button>
+                            )}
+                          </div>
                         </div>
-                      </div>
-                    ))}
-                  </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
 
                 <div className="glass rounded-2xl p-5">
@@ -369,14 +521,14 @@ export default function SettingsPage() {
                   <p className="text-sm text-[#6B7280] mb-4">Control how your data is used and stored.</p>
                   <div className="space-y-3">
                     {[
-                      { label: "Analytics &amp; Performance Tracking", desc: "Help us improve KlarTrade with anonymized usage data", enabled: true },
+                      { label: "Analytics & Performance Tracking", desc: "Help us improve KlarTrade with anonymized usage data", enabled: true },
                       { label: "AI Training Consent", desc: "Allow your anonymized journal data to improve KlarAI recommendations", enabled: false },
                       { label: "Email Notifications", desc: "Receive summaries, tips, and product updates", enabled: true },
                       { label: "Public Profile", desc: "Allow your username and stats to appear on leaderboards", enabled: false },
                     ].map((item) => (
                       <div key={item.label} className="glass rounded-2xl p-4 flex items-center gap-4">
                         <div className="flex-1">
-                          <p className="text-sm font-semibold text-[#F2F0EB]" dangerouslySetInnerHTML={{ __html: item.label }} />
+                          <p className="text-sm font-semibold text-[#F2F0EB]">{item.label}</p>
                           <p className="text-[11px] text-[#6B7280] mt-0.5">{item.desc}</p>
                         </div>
                         <div className={cn("w-10 h-5 rounded-full relative flex-shrink-0 cursor-pointer transition-all",
@@ -392,18 +544,16 @@ export default function SettingsPage() {
                 <div className="glass rounded-2xl p-5">
                   <h3 className="text-sm font-semibold text-[#F2F0EB] mb-3">Data Retention</h3>
                   <div className="space-y-2 text-sm text-[#6B7280]">
-                    <div className="flex justify-between">
-                      <span>Journal entries</span>
-                      <span className="text-[#F2F0EB]">Kept indefinitely</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span>Trade data</span>
-                      <span className="text-[#F2F0EB]">7 years (regulatory)</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span>Session recordings</span>
-                      <span className="text-[#F2F0EB]">90 days</span>
-                    </div>
+                    {[
+                      { label: "Journal entries", value: "Kept indefinitely" },
+                      { label: "Trade data", value: "7 years (regulatory)" },
+                      { label: "Session recordings", value: "90 days" },
+                    ].map((r) => (
+                      <div key={r.label} className="flex justify-between">
+                        <span>{r.label}</span>
+                        <span className="text-[#F2F0EB]">{r.value}</span>
+                      </div>
+                    ))}
                   </div>
                   <button className="mt-4 flex items-center gap-1.5 text-xs text-[#4BA3D4] hover:text-white transition-colors">
                     <Download className="w-3.5 h-3.5" /> Download All My Data
@@ -417,12 +567,14 @@ export default function SettingsPage() {
               <>
                 <div>
                   <h2 className="text-base font-bold text-[#F2F0EB] mb-4">Security</h2>
-                  <div className="glass rounded-2xl p-5 space-y-5">
+                  <div className="glass rounded-2xl p-5 space-y-4">
                     <div>
                       <label className="text-[11px] font-semibold text-[#6B7280] uppercase tracking-wide block mb-1.5">Current Password</label>
                       <div className="relative">
                         <input
                           type={showPassword ? "text" : "password"}
+                          value={passwordForm.current}
+                          onChange={(e) => setPasswordForm((f) => ({ ...f, current: e.target.value }))}
                           placeholder="••••••••••••"
                           className="w-full bg-white/[0.04] border border-white/[0.08] rounded-xl px-3 py-2.5 text-sm text-[#F2F0EB] focus:outline-none focus:border-[#03588C]/50 pr-10"
                         />
@@ -438,11 +590,36 @@ export default function SettingsPage() {
                       <label className="text-[11px] font-semibold text-[#6B7280] uppercase tracking-wide block mb-1.5">New Password</label>
                       <input
                         type="password"
+                        value={passwordForm.new}
+                        onChange={(e) => setPasswordForm((f) => ({ ...f, new: e.target.value }))}
                         placeholder="••••••••••••"
                         className="w-full bg-white/[0.04] border border-white/[0.08] rounded-xl px-3 py-2.5 text-sm text-[#F2F0EB] focus:outline-none focus:border-[#03588C]/50"
                       />
                     </div>
-                    <button className="px-4 py-2 rounded-xl bg-[#03588C] text-white text-xs font-semibold hover:bg-[#024a77] transition-all">
+                    <div>
+                      <label className="text-[11px] font-semibold text-[#6B7280] uppercase tracking-wide block mb-1.5">Confirm New Password</label>
+                      <input
+                        type="password"
+                        value={passwordForm.confirm}
+                        onChange={(e) => setPasswordForm((f) => ({ ...f, confirm: e.target.value }))}
+                        placeholder="••••••••••••"
+                        className="w-full bg-white/[0.04] border border-white/[0.08] rounded-xl px-3 py-2.5 text-sm text-[#F2F0EB] focus:outline-none focus:border-[#03588C]/50"
+                      />
+                    </div>
+                    {passwordError && (
+                      <p className="text-xs text-red-400">{passwordError}</p>
+                    )}
+                    {passwordSuccess && (
+                      <div className="flex items-center gap-2 text-xs text-[#22C55E]">
+                        <CheckCircle className="w-3.5 h-3.5" /> Password updated successfully
+                      </div>
+                    )}
+                    <button
+                      onClick={handleChangePassword}
+                      disabled={passwordLoading || !passwordForm.current || !passwordForm.new}
+                      className="px-4 py-2 rounded-xl bg-[#03588C] text-white text-xs font-semibold hover:bg-[#024a77] transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                    >
+                      {passwordLoading && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
                       Update Password
                     </button>
                   </div>
@@ -476,7 +653,6 @@ export default function SettingsPage() {
                   <div className="space-y-2">
                     {[
                       { device: "MacBook Pro — Chrome", location: "Paris, FR", time: "Now (current)", current: true },
-                      { device: "iPhone 15 — Safari", location: "Paris, FR", time: "2 hours ago", current: false },
                     ].map((session) => (
                       <div key={session.device} className="flex items-center gap-3 py-2">
                         <Smartphone className="w-4 h-4 text-[#6B7280] flex-shrink-0" />
@@ -484,11 +660,7 @@ export default function SettingsPage() {
                           <p className="text-xs font-medium text-[#F2F0EB] truncate">{session.device}</p>
                           <p className="text-[10px] text-[#6B7280]">{session.location} · {session.time}</p>
                         </div>
-                        {session.current ? (
-                          <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-[#22C55E]/10 text-[#22C55E]">Current</span>
-                        ) : (
-                          <button className="text-[10px] text-red-400 hover:text-red-300 transition-colors">Revoke</button>
-                        )}
+                        <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-[#22C55E]/10 text-[#22C55E]">Current</span>
                       </div>
                     ))}
                   </div>
@@ -524,26 +696,12 @@ export default function SettingsPage() {
                 </div>
 
                 <div className="glass rounded-2xl p-5">
-                  <h3 className="text-sm font-semibold text-[#F2F0EB] mb-3">Payment Method</h3>
-                  <div className="flex items-center gap-3 p-3 rounded-xl bg-white/[0.03] border border-white/[0.06]">
-                    <div className="w-10 h-7 rounded-lg bg-white/[0.08] flex items-center justify-center">
-                      <CreditCard className="w-5 h-5 text-[#6B7280]" />
-                    </div>
-                    <div className="flex-1">
-                      <p className="text-sm text-[#F2F0EB]">•••• •••• •••• 4242</p>
-                      <p className="text-[10px] text-[#6B7280]">Expires 12/27</p>
-                    </div>
-                    <button className="text-xs text-[#4BA3D4] hover:text-white transition-colors">Update</button>
-                  </div>
-                </div>
-
-                <div className="glass rounded-2xl p-5">
                   <h3 className="text-sm font-semibold text-[#F2F0EB] mb-3">Billing History</h3>
                   <div className="space-y-2">
                     {[
-                      { date: "May 7, 2026", amount: "$49.00", status: "paid" },
-                      { date: "Apr 7, 2026", amount: "$49.00", status: "paid" },
-                      { date: "Mar 7, 2026", amount: "$49.00", status: "paid" },
+                      { date: "May 7, 2026", amount: "$49.00" },
+                      { date: "Apr 7, 2026", amount: "$49.00" },
+                      { date: "Mar 7, 2026", amount: "$49.00" },
                     ].map((inv) => (
                       <div key={inv.date} className="flex items-center justify-between py-2 border-b border-white/[0.04] last:border-0">
                         <div className="flex items-center gap-3">
@@ -601,7 +759,7 @@ export default function SettingsPage() {
                       rows={4}
                       className="w-full bg-white/[0.04] border border-white/[0.08] rounded-xl px-3 py-2.5 text-sm text-[#F2F0EB] placeholder-[#6B7280]/60 focus:outline-none focus:border-[#03588C]/50 resize-none"
                     />
-                    <button className="px-5 py-2.5 rounded-xl bg-[#03588C] text-white text-sm font-semibold hover:bg-[#024a77] transition-all shadow-glow-xs">
+                    <button className="px-5 py-2.5 rounded-xl bg-[#03588C] text-white text-sm font-semibold hover:bg-[#024a77] transition-all">
                       Submit
                     </button>
                   </div>
@@ -620,15 +778,10 @@ export default function SettingsPage() {
                     </div>
                     <h3 className="text-lg font-bold text-[#F2F0EB] mb-0.5">KlarTrade</h3>
                     <p className="text-sm text-[#6B7280] mb-1">Trade with clarity. Execute with discipline.</p>
-                    <p className="text-[11px] text-[#6B7280]/60">Version 1.0.0 · Build 2026.05.07</p>
+                    <p className="text-[11px] text-[#6B7280]/60">Version 1.0.0 · Build 2026.06.05</p>
                   </div>
                   <div className="space-y-2">
-                    {[
-                      { label: "Terms of Service", href: "#" },
-                      { label: "Privacy Policy", href: "#" },
-                      { label: "Refund Policy", href: "#" },
-                      { label: "Open Source Licenses", href: "#" },
-                    ].map(({ label }) => (
+                    {["Terms of Service", "Privacy Policy", "Refund Policy", "Open Source Licenses"].map((label) => (
                       <button key={label} className="w-full flex items-center justify-between px-4 py-3 glass rounded-xl hover:bg-white/[0.05] transition-all">
                         <span className="text-sm text-[#F2F0EB]">{label}</span>
                         <ChevronRight className="w-4 h-4 text-[#6B7280]" />

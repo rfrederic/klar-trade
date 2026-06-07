@@ -1,11 +1,18 @@
 import Link from "next/link";
-import { TrendingUp, Twitter, Github, Linkedin } from "lucide-react";
+import Image from "next/image";
+import { Twitter, Github, Linkedin } from "lucide-react";
 
 const footerLinks = {
   Product: ["Features", "Dashboard", "Pricing", "Changelog"],
   Company: ["About", "Blog", "Careers", "Press"],
   Resources: ["Documentation", "API", "Community", "Support"],
   Legal: ["Privacy", "Terms", "Cookies", "Security"],
+};
+
+const footerHrefs: Record<string, string> = {
+  Terms: "/terms",
+  Privacy: "/privacy",
+
 };
 
 export function Footer() {
@@ -16,8 +23,8 @@ export function Footer() {
           {/* Brand */}
           <div className="md:col-span-1">
             <Link href="/" className="flex items-center gap-2.5 mb-4">
-              <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-indigo-500 to-violet-600 flex items-center justify-center shadow-glow-xs">
-                <TrendingUp className="w-4 h-4 text-white" strokeWidth={2.5} />
+              <div className="w-8 h-8 flex items-center justify-center">
+                <Image src="/klar-removebg-preview.png" alt="KlarTrade logo" width={48} height={48} className="object-contain" />
               </div>
               <span className="text-[17px] font-bold font-display text-white">
                 Klar<span className="text-indigo-400">trade</span>
@@ -49,7 +56,7 @@ export function Footer() {
                 {links.map((link) => (
                   <li key={link}>
                     <Link
-                      href="#"
+                      href={footerHrefs[link] ?? "#"}
                       className="text-sm text-slate-500 hover:text-slate-300 transition-colors duration-200"
                     >
                       {link}
