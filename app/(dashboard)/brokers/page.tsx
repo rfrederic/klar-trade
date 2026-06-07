@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
+import { useSearchParams } from "next/navigation";
 import { Header } from "@/components/dashboard/Header";
 import { BrokerConnectModal } from "@/components/dashboard/BrokerConnectModal";
 import {
@@ -12,7 +13,7 @@ import { cn } from "@/lib/utils";
 
 interface BrokerConnection {
   id: string;
-  broker: "tradelocker" | "mt5";
+  broker: "tradelocker" | "mt5" | "ctrader";
   display_name: string;
   account_id: string;
   balance: string;
@@ -23,9 +24,12 @@ interface BrokerConnection {
   trades_count: number;
 }
 
+type Broker = "tradelocker" | "mt5" | "ctrader";
+
 const brokerMeta: Record<string, { logo: string; color: string; description: string }> = {
-  tradelocker: { logo: "TL", color: "violet", description: "Prop Firm Integration · All instruments" },
-  mt5: { logo: "MT", color: "amber", description: "MetaQuotes · FX & Futures" },
+  tradelocker: { logo: "TL",  color: "violet", description: "Prop Firm Integration · All instruments" },
+  mt5:         { logo: "MT",  color: "amber",  description: "MetaQuotes · FX & Futures" },
+  ctrader:     { logo: "CT",  color: "sky",    description: "Spotware cTrader · FX & CFDs" },
 };
 
 const statusConfig = {
@@ -44,13 +48,16 @@ function timeAgo(iso: string | null) {
 }
 
 export default function BrokersPage() {
+  const searchParams = useSearchParams();
+
   const [connections, setConnections] = useState<BrokerConnection[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [syncing, setSyncing] = useState<string | null>(null);
-  const [deleting, setDeleting] = useState<string | null>(null);
+  const [loading, setLoading]       = useState(true);
+  const [syncing, setSyncing]       = useState<string | null>(null);
+  const [deleting, setDeleting]     = useState<string | null>(null);
   const [syncResult, setSyncResult] = useState<{ id: string; msg: string; ok: boolean } | null>(null);
-  const [modalOpen, setModalOpen] = useState(false);
-  const [modalBroker, setModalBroker] = useState<"tradelocker" | "mt5">("tradelocker");
+  const [flashMsg, setFlashMsg]     = useState<{ msg: string; ok: boolean } | null>(null);
+  const [modalOpen, setModalOpen]   = useState(false);
+  const [modalBroker, setModalBroker] = useState<Broker>("tradelocker");
 
   const fetchConnections = useCallback(async () => {
     try {
@@ -64,7 +71,19 @@ export default function BrokersPage() {
 
   useEffect(() => { fetchConnections(); }, [fetchConnections]);
 
-  const openModal = (broker: "tradelocker" | "mt5") => {
+  // Handle redirect back from cTrader OAuth
+  useEffect(() => {
+    const status = searchParams.get("ctrader");
+    const err    = searchParams.get("ctrader_error");
+    if (status === "connected") {
+      setFlashMsg({ msg: "cTrader account connected successfully!", ok: true });
+      fetchConnections();
+    } else if (err) {
+      setFlashMsg({ msg: `cTrader error: ${decodeURIComponent(err)}`, ok: false });
+    }
+  }, [searchParams, fetchConnections]);
+
+  const openModal = (broker: Broker) => {
     setModalBroker(broker);
     setModalOpen(true);
   };
@@ -96,9 +115,38 @@ export default function BrokersPage() {
         } else {
           setSyncResult({ id: conn.id, msg: json.error ?? "Sync failed", ok: false });
         }
-      } else {
-        // TradeLocker sync not yet implemented
-        setSyncResult({ id: conn.id, msg: "TradeLocker auto-sync coming soon", ok: true });
+      } else if (conn.broker === "tradelocker") {
+        const res  = await fetch("/api/brokers/tradelocker/sync", {
+          method:  "POST",
+          headers: { "Content-Type": "application/json" },
+          body:    JSON.stringify({ connectionId: conn.id }),
+        });
+        const json = await res.json();
+        if (res.ok) {
+          setSyncResult({
+            id:  conn.id,
+            msg: `${json.tradesImported} trade${json.tradesImported !== 1 ? "s" : ""} imported · Balance: ${json.balance ?? "—"}`,
+            ok:  true,
+          });
+        } else {
+          setSyncResult({ id: conn.id, msg: json.error ?? "Sync failed", ok: false });
+        }
+      } else if (conn.broker === "ctrader") {
+        const res  = await fetch("/api/brokers/ctrader/sync", {
+          method:  "POST",
+          headers: { "Content-Type": "application/json" },
+          body:    JSON.stringify({ connectionId: conn.id }),
+        });
+        const json = await res.json();
+        if (res.ok) {
+          setSyncResult({
+            id:  conn.id,
+            msg: `${json.tradesImported} trade${json.tradesImported !== 1 ? "s" : ""} imported · Balance: ${json.balance ?? "—"}`,
+            ok:  true,
+          });
+        } else {
+          setSyncResult({ id: conn.id, msg: json.error ?? "Sync failed", ok: false });
+        }
       }
       await fetchConnections();
     } catch (err) {
@@ -112,10 +160,12 @@ export default function BrokersPage() {
   const totalTrades = connections.reduce((a, c) => a + (c.trades_count ?? 0), 0);
 
   // Available brokers not yet connected
-  const availableBrokers: Array<{ id: "tradelocker" | "mt5"; name: string; logo: string; color: string; description: string }> = [
-    { id: "tradelocker", name: "TradeLocker", logo: "TL", color: "violet", description: "Prop Firm Integration · All instruments" },
-    { id: "mt5", name: "MetaTrader 5", logo: "MT", color: "amber", description: "MetaQuotes · FX & Futures" },
-  ].filter((b) => !connections.find((c) => c.broker === b.id));
+  const ALL_BROKERS: Array<{ id: Broker; name: string; logo: string; color: string; description: string }> = [
+    { id: "tradelocker", name: "TradeLocker",  logo: "TL", color: "violet", description: "Prop Firm Integration · All instruments" },
+    { id: "mt5",         name: "MetaTrader 5", logo: "MT", color: "amber",  description: "MetaQuotes · FX & Futures" },
+    { id: "ctrader",     name: "cTrader",      logo: "CT", color: "sky",    description: "Spotware cTrader · FX & CFDs" },
+  ];
+  const availableBrokers = ALL_BROKERS.filter((b) => !connections.find((c) => c.broker === b.id));
 
   return (
     <div className="flex flex-col flex-1">
@@ -123,10 +173,30 @@ export default function BrokersPage() {
 
       <main className="flex-1 p-6 space-y-6">
 
+        {/* OAuth redirect flash (cTrader callback) */}
+        {flashMsg && (
+          <div className={cn(
+            "flex items-center justify-between gap-3 px-4 py-3 rounded-2xl text-[13px] font-medium border",
+            flashMsg.ok
+              ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20"
+              : "bg-rose-500/10 text-rose-400 border-rose-500/20"
+          )}>
+            <div className="flex items-center gap-2">
+              {flashMsg.ok
+                ? <CheckCircle2 className="w-4 h-4 flex-shrink-0" />
+                : <AlertCircle  className="w-4 h-4 flex-shrink-0" />}
+              {flashMsg.msg}
+            </div>
+            <button onClick={() => setFlashMsg(null)} className="text-current opacity-60 hover:opacity-100">
+              <Link2 className="w-3.5 h-3.5 rotate-45" />
+            </button>
+          </div>
+        )}
+
         {/* Summary row */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           {[
-            { label: "Connected", value: connected.length.toString(), sub: "of 2 brokers", color: "text-emerald-400", icon: CheckCircle2 },
+            { label: "Connected", value: connected.length.toString(), sub: "of 3 brokers", color: "text-emerald-400", icon: CheckCircle2 },
             { label: "Total Trades Synced", value: totalTrades.toString(), sub: "all time", color: "text-white", icon: ArrowDownToLine },
             { label: "Live Accounts", value: connected.length > 0 ? connected.map(c => c.balance).filter(b => b !== "—").join(" + ") || "—" : "—", sub: "combined balance", color: "text-indigo-400", icon: BarChart2 },
             { label: "Last Sync", value: connected.length > 0 ? timeAgo(connected[0]?.last_sync) : "—", sub: connected[0]?.display_name ?? "No connections", color: "text-slate-300", icon: RefreshCw },
@@ -315,7 +385,7 @@ export default function BrokersPage() {
 
       <BrokerConnectModal
         open={modalOpen}
-        defaultBroker={modalBroker}
+        defaultBroker={modalBroker as "tradelocker" | "mt5" | "ctrader"}
         onClose={() => setModalOpen(false)}
         onConnected={fetchConnections}
       />

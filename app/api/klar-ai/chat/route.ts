@@ -13,9 +13,32 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "KlarAI is not configured yet" }, { status: 503 });
   }
 
-  const { messages } = await req.json();
+  const body = await req.json();
+  const { messages, systemOverride } = body;
   if (!Array.isArray(messages) || messages.length === 0) {
     return NextResponse.json({ error: "Messages required" }, { status: 400 });
+  }
+
+  // Support / lightweight callers can pass a custom system prompt, skipping trader data.
+  if (systemOverride) {
+    const apiMessages = messages.map((m: { role: string; content: string }) => ({
+      role: m.role as "user" | "assistant",
+      content: m.content,
+    }));
+    try {
+      const response = await anthropic.messages.create({
+        model: "claude-haiku-4-5-20251001",
+        max_tokens: 1024,
+        system: systemOverride,
+        messages: apiMessages,
+      });
+      const content = response.content[0];
+      if (content.type !== "text") return NextResponse.json({ error: "Unexpected response type" }, { status: 500 });
+      return NextResponse.json({ content: content.text });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Failed to get AI response";
+      return NextResponse.json({ error: message }, { status: 500 });
+    }
   }
 
   const supabase = createServiceClient();

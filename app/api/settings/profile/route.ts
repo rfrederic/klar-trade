@@ -1,15 +1,25 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createServerClient } from "@/lib/supabase/server";
+import { createServerClient, createServiceClient } from "@/lib/supabase/server";
 
 export async function GET() {
   const authClient = await createServerClient();
   const { data: { user } } = await authClient.auth.getUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  return NextResponse.json({
-    email: user.email,
-    user_metadata: user.user_metadata ?? {},
-  });
+  // Fetch avatar_url from profiles table, fall back to user_metadata
+  const supabase = createServiceClient();
+  const { data: prof } = await supabase
+    .from("profiles")
+    .select("avatar_url")
+    .eq("id", user.id)
+    .maybeSingle();
+
+  const avatar_url = prof?.avatar_url ?? user.user_metadata?.avatar_url ?? null;
+
+  return NextResponse.json(
+    { email: user.email, user_metadata: user.user_metadata ?? {}, avatar_url },
+    { headers: { "Cache-Control": "no-store" } },
+  );
 }
 
 export async function PATCH(req: NextRequest) {

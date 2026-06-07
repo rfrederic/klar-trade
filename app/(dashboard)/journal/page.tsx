@@ -1,10 +1,11 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
+import { useSearchParams } from "next/navigation";
 import { Header } from "@/components/dashboard/Header";
 import {
   Plus, RefreshCw, ChevronLeft, ChevronRight,
-  Check, AlertTriangle, Mic, X, Loader2, Smile, Meh, Frown, Leaf,
+  Check, AlertTriangle, Mic, X, Loader2, Smile, Meh, Frown, Leaf, Upload,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -65,6 +66,171 @@ function CalendarDay({ day, data, selected, onClick }: {
         </>
       )}
     </button>
+  );
+}
+
+// ─── ImportTradesModal ───────────────────────────────────────────────────────
+
+function ImportTradesModal({ onClose, onImported }: { onClose: () => void; onImported: () => void }) {
+  const [file, setFile]           = useState<File | null>(null);
+  const [dragging, setDragging]   = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [result, setResult]       = useState<{ ok: boolean; msg: string } | null>(null);
+  const inputRef                  = useRef<HTMLInputElement>(null);
+
+  const acceptFile = (f: File) => {
+    const n = f.name.toLowerCase();
+    if (!n.endsWith(".csv") && !n.endsWith(".pdf")) {
+      setResult({ ok: false, msg: "Only .csv and .pdf files are supported" });
+      return;
+    }
+    setFile(f);
+    setResult(null);
+  };
+
+  const fileType = file?.name.toLowerCase().endsWith(".pdf") ? "PDF" : "CSV";
+
+  const handleImport = async () => {
+    if (!file) return;
+    setUploading(true);
+    setResult(null);
+    const form = new FormData();
+    form.append("file", file);
+    try {
+      const res  = await fetch("/api/journal/import", { method: "POST", body: form });
+      const data = await res.json();
+      if (res.ok) {
+        const n = data.imported as number;
+        setResult({ ok: true, msg: `${n} trade${n !== 1 ? "s" : ""} imported from ${(data.fileType as string).toUpperCase()}` });
+        if (n > 0) setTimeout(() => { onImported(); onClose(); }, 1400);
+      } else {
+        setResult({ ok: false, msg: data.error ?? "Import failed" });
+      }
+    } catch {
+      setResult({ ok: false, msg: "Upload failed — please try again" });
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+      <div className="glass rounded-2xl w-full max-w-md p-6 shadow-glow-sm">
+
+        {/* Hidden file input — kept outside the drop zone so programmatic .click()
+            doesn't bubble back to the div's onClick and cancel the dialog */}
+        <input
+          ref={inputRef}
+          type="file"
+          accept=".csv,.pdf"
+          className="hidden"
+          onChange={(e) => {
+            const f = e.target.files?.[0];
+            if (f) acceptFile(f);
+            e.target.value = "";   // reset so same file can be re-selected
+          }}
+        />
+
+        {/* Header */}
+        <div className="flex items-center justify-between mb-5">
+          <h2 className="text-lg font-bold text-[#F2F0EB]">Import Trades</h2>
+          <button onClick={onClose} className="text-[#6B7280] hover:text-[#F2F0EB] transition-colors">
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        {/* Drop zone */}
+        <div
+          onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
+          onDragLeave={(e) => {
+            // only clear dragging when cursor truly leaves the zone (not just entering a child)
+            if (!e.currentTarget.contains(e.relatedTarget as Node)) setDragging(false);
+          }}
+          onDrop={(e) => {
+            e.preventDefault();
+            setDragging(false);
+            const f = e.dataTransfer.files[0];
+            if (f) acceptFile(f);
+          }}
+          onClick={() => { if (!file) inputRef.current?.click(); }}
+          className={cn(
+            "border-2 border-dashed rounded-xl p-7 text-center transition-all mb-4",
+            file ? "border-[#03588C]/40 bg-[#03588C]/5 cursor-default"
+              : dragging ? "border-[#03588C] bg-[#03588C]/10 cursor-copy"
+              : "border-white/[0.12] hover:border-[#03588C]/50 hover:bg-white/[0.02] cursor-pointer",
+          )}
+        >
+          {file ? (
+            <div className="flex items-center justify-center gap-3">
+              <span className={cn(
+                "text-[11px] font-bold px-2 py-0.5 rounded-md",
+                fileType === "PDF"
+                  ? "bg-red-500/20 text-red-300 border border-red-500/30"
+                  : "bg-emerald-500/20 text-emerald-300 border border-emerald-500/30",
+              )}>
+                {fileType}
+              </span>
+              <span className="text-sm text-[#F2F0EB] truncate max-w-[220px]">{file.name}</span>
+              <button
+                type="button"
+                onClick={(e) => { e.stopPropagation(); setFile(null); setResult(null); }}
+                className="text-[#6B7280] hover:text-red-400 transition-colors ml-1"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          ) : (
+            <>
+              <Upload className="w-7 h-7 text-[#6B7280] mx-auto mb-2.5" />
+              <p className="text-sm text-[#F2F0EB] mb-1">Drop file here or click to browse</p>
+              <p className="text-xs text-[#6B7280]">
+                Accepts{" "}
+                <span className="font-semibold text-emerald-400">.csv</span>
+                {" "}and{" "}
+                <span className="font-semibold text-red-400">.pdf</span>
+                {" "}broker statements
+              </p>
+            </>
+          )}
+        </div>
+
+        {/* Format hints */}
+        {!file && (
+          <div className="text-[11px] text-[#6B7280]/70 space-y-0.5 mb-4 px-1">
+            <p className="text-[#F2F0EB]/30 font-medium mb-1.5 uppercase tracking-wider text-[10px]">Supported formats</p>
+            <p>· MT4 / MT5 account statement — CSV or PDF</p>
+            <p>· cTrader closed positions export</p>
+            <p>· TradeLocker trade history</p>
+            <p>· Any broker CSV with symbol, direction, date and P&L columns</p>
+          </div>
+        )}
+
+        {/* Result */}
+        {result && (
+          <div className={cn(
+            "flex items-start gap-2.5 px-3.5 py-3 rounded-xl text-[13px] mb-4 border",
+            result.ok
+              ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-400"
+              : "bg-amber-500/10 border-amber-500/20 text-amber-400",
+          )}>
+            {result.ok
+              ? <Check className="w-4 h-4 mt-0.5 flex-shrink-0" />
+              : <AlertTriangle className="w-4 h-4 mt-0.5 flex-shrink-0" />}
+            <span>{result.msg}</span>
+          </div>
+        )}
+
+        {/* Actions */}
+        <div className="flex gap-3">
+          <Button variant="outline" className="flex-1" onClick={onClose}>Cancel</Button>
+          <Button className="flex-1" disabled={!file || uploading} onClick={handleImport}>
+            {uploading
+              ? <Loader2 className="w-4 h-4 animate-spin" />
+              : <><Upload className="w-3.5 h-3.5" /> Import</>}
+          </Button>
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -490,7 +656,13 @@ export default function JournalPage() {
   const [syncing, setSyncing] = useState(false);
   const [lastSync, setLastSync] = useState<Date | null>(null);
   const [expandedTrade, setExpandedTrade] = useState<string | null>(null);
-  const [showAddModal, setShowAddModal] = useState(false);
+  const [showAddModal, setShowAddModal]       = useState(false);
+  const [showImportModal, setShowImportModal] = useState(false);
+  const searchParams = useSearchParams();
+
+  useEffect(() => {
+    if (searchParams.get("new") === "true") setShowAddModal(true);
+  }, [searchParams]);
 
   const dayNotesTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -603,6 +775,10 @@ export default function JournalPage() {
               Sync Now
             </Button>
             {syncLabel && <span className="text-[11px] text-[#6B7280]">{syncLabel}</span>}
+            <Button variant="outline" size="sm" onClick={() => setShowImportModal(true)}>
+              <Upload className="w-3.5 h-3.5" />
+              Import
+            </Button>
             <Button size="sm" onClick={() => setShowAddModal(true)}>
               <Plus className="w-3.5 h-3.5" />
               Add Manual
@@ -945,6 +1121,13 @@ export default function JournalPage() {
         <AddTradeModal
           onClose={() => setShowAddModal(false)}
           onAdded={loadTrades}
+        />
+      )}
+
+      {showImportModal && (
+        <ImportTradesModal
+          onClose={() => setShowImportModal(false)}
+          onImported={loadTrades}
         />
       )}
     </div>

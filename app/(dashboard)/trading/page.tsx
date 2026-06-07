@@ -183,6 +183,8 @@ export default function TradingPage() {
   const [journalExit, setJournalExit]           = useState("");
   const [journalNotes, setJournalNotes]         = useState("");
   const [journalEmotion, setJournalEmotion]     = useState("");
+  const [journalLotSize, setJournalLotSize]     = useState("");
+  const [journalPnlOverride, setJournalPnlOverride] = useState("");
   const [journalSaving, setJournalSaving]       = useState(false);
   const [toast, setToast]                       = useState<string | null>(null);
   const [panelHeight, setPanelHeight]       = useState(180);
@@ -266,6 +268,8 @@ export default function TradingPage() {
     setJournalExit("");
     setJournalNotes("");
     setJournalEmotion("");
+    setJournalLotSize("");
+    setJournalPnlOverride("");
     setShowJournalForm(true);
   };
 
@@ -275,9 +279,12 @@ export default function TradingPage() {
       const ep = parseFloat(journalEntry);
       const xp = parseFloat(journalExit);
       const hasNumbers = !isNaN(ep) && !isNaN(xp);
-      const pnl = hasNumbers
+      const autoPnl = hasNumbers
         ? (journalDirection === "BUY" ? xp - ep : ep - xp)
         : null;
+      const pnl = journalPnlOverride !== ""
+        ? (parseFloat(journalPnlOverride) || null)
+        : autoPnl;
 
       const res = await fetch("/api/journal/trades", {
         method: "POST",
@@ -288,6 +295,7 @@ export default function TradingPage() {
           entry_price: !isNaN(ep) ? ep : null,
           exit_price:  !isNaN(xp) ? xp : null,
           pnl,
+          volume:      journalLotSize ? parseFloat(journalLotSize) || null : null,
           notes:       journalNotes || null,
           emotion:     journalEmotion || null,
           closed_at:   new Date().toISOString(),
@@ -392,6 +400,10 @@ export default function TradingPage() {
                 </button>
               </>
             )}
+            <Button size="sm" onClick={openJournalForm}>
+              <FileText className="w-3.5 h-3.5" />
+              Log Trade
+            </Button>
           </div>
         }
       />
@@ -971,18 +983,41 @@ export default function TradingPage() {
                   ))}
                 </div>
 
-                {/* P&L display */}
-                {journalPnl !== null && (
-                  <div className={cn(
-                    "flex items-center justify-between px-3 py-2 rounded-xl border text-sm font-bold",
-                    journalPnl >= 0
-                      ? "bg-[#22C55E]/10 border-[#22C55E]/20 text-[#22C55E]"
-                      : "bg-red-500/10 border-red-500/20 text-red-400"
-                  )}>
-                    <span className="text-[11px] font-medium text-[#6B7280]">P&L</span>
-                    <span>{journalPnl >= 0 ? "+" : ""}{journalPnl.toFixed(5)}</span>
+                {/* Lot Size + P&L */}
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <p className="text-[10px] text-[#6B7280] uppercase tracking-wide mb-1">Lot Size</p>
+                    <input
+                      type="number"
+                      value={journalLotSize}
+                      onChange={(e) => setJournalLotSize(e.target.value)}
+                      placeholder="0.01"
+                      min="0"
+                      step="0.01"
+                      className="w-full bg-white/[0.04] border border-white/[0.07] rounded-xl px-3 py-2 text-xs text-[#F2F0EB] font-mono focus:outline-none focus:border-[#03588C]/50"
+                    />
                   </div>
-                )}
+                  <div>
+                    <p className="text-[10px] text-[#6B7280] uppercase tracking-wide mb-1">
+                      P&L {journalPnlOverride === "" && journalPnl !== null && (
+                        <span className="text-[#6B7280]/50 normal-case tracking-normal">(auto)</span>
+                      )}
+                    </p>
+                    <input
+                      type="number"
+                      value={journalPnlOverride !== "" ? journalPnlOverride : (journalPnl !== null ? String(journalPnl.toFixed(5)) : "")}
+                      onChange={(e) => setJournalPnlOverride(e.target.value)}
+                      placeholder="0.00"
+                      step="0.01"
+                      className={cn(
+                        "w-full bg-white/[0.04] border border-white/[0.07] rounded-xl px-3 py-2 text-xs font-mono focus:outline-none focus:border-[#03588C]/50",
+                        journalPnlOverride === "" && journalPnl !== null
+                          ? journalPnl >= 0 ? "text-[#22C55E]" : "text-red-400"
+                          : "text-[#F2F0EB]"
+                      )}
+                    />
+                  </div>
+                </div>
 
                 {/* Emotion */}
                 <div>

@@ -64,11 +64,17 @@ const testimonials = [
   },
 ];
 
-const brokers = [
-  "cTrader", "TradeLocker", "Tradovate", "MetaTrader 4", "MetaTrader 5",
-  "NinjaTrader", "Interactive Brokers", "OANDA", "Pepperstone", "IC Markets",
-  "Robinhood", "Bybit", "Binance", "Rithmic", "DXtrade", "FXCM",
-  "Forex.com", "Charles Schwab", "E*TRADE", "Webull", "Alpari", "Axi",
+interface BrokerEntry { name: string; comingSoon?: boolean }
+const brokers: BrokerEntry[] = [
+  { name: "cTrader" }, { name: "TradeLocker" }, { name: "Tradovate" },
+  { name: "MetaTrader 4" },
+  { name: "MetaTrader 5", comingSoon: true },
+  { name: "NinjaTrader" }, { name: "Interactive Brokers" }, { name: "OANDA" },
+  { name: "Pepperstone" }, { name: "IC Markets" }, { name: "Robinhood" },
+  { name: "Bybit" }, { name: "Binance" }, { name: "Rithmic" },
+  { name: "DXtrade" }, { name: "FXCM" }, { name: "Forex.com" },
+  { name: "Charles Schwab" }, { name: "E*TRADE" }, { name: "Webull" },
+  { name: "Alpari" }, { name: "Axi" },
 ];
 
 const pricing = [
@@ -180,13 +186,15 @@ export default function LandingPage() {
                 <ArrowRight className="w-4 h-4" />
               </motion.button>
             </Link>
-            <motion.button
-              whileHover={{ scale: 1.02 }}
-              className="flex items-center gap-2.5 glass px-7 py-3.5 rounded-xl text-[15px] font-medium"
-            >
-              <Play className="w-4 h-4 text-[#03588C]" />
-              Watch Demo
-            </motion.button>
+            <Link href="/demo">
+              <motion.button
+                whileHover={{ scale: 1.02 }}
+                className="flex items-center gap-2.5 glass px-7 py-3.5 rounded-xl text-[15px] font-medium"
+              >
+                <Play className="w-4 h-4 text-[#03588C]" />
+                Watch Demo
+              </motion.button>
+            </Link>
           </div>
 
           {/* Dashboard Mockup */}
@@ -418,12 +426,21 @@ export default function LandingPage() {
           <p className="text-[#6B7280] text-lg max-w-xl mx-auto mb-12">Auto-sync trades from 40+ brokers. Or upload a CSV. Everything imports.</p>
           <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-3 mb-6">
             {brokers.map((b) => (
-              <div key={b} className="glass rounded-xl px-3 py-2.5 text-xs font-medium text-[#6B7280] hover:text-[#F2F0EB] hover:border-[#03588C]/30 transition-all text-center">
-                {b}
-              </div>
+              b.comingSoon ? (
+                <div key={b.name} className="relative glass rounded-xl px-3 py-2.5 text-xs font-medium text-[#4B5563] transition-all text-center opacity-60 cursor-default">
+                  {b.name}
+                  <span className="absolute -top-2 -right-1 bg-[#03588C]/80 text-[#93C5FD] text-[9px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded-full leading-none">
+                    Soon
+                  </span>
+                </div>
+              ) : (
+                <div key={b.name} className="glass rounded-xl px-3 py-2.5 text-xs font-medium text-[#6B7280] hover:text-[#F2F0EB] hover:border-[#03588C]/30 transition-all text-center">
+                  {b.name}
+                </div>
+              )
             ))}
           </div>
-          <p className="text-sm text-[#6B7280]">+ CSV upload works for everything else</p>
+          <p className="text-sm text-[#6B7280]">+ CSV upload works for everything else · MT5 auto-sync coming soon</p>
         </div>
       </section>
 

@@ -7,7 +7,7 @@ import Image from "next/image";
 import {
   LayoutDashboard, TrendingUp, Layers, BookOpen, StickyNote,
   Leaf, Sparkles, BarChart2, Trophy, Shield,
-  Settings, ChevronLeft, ChevronRight, LogOut, UserCircle,
+  Settings, ChevronLeft, ChevronRight, LogOut,
   Search,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -188,29 +188,7 @@ export function Sidebar({ collapsed, onCollapse, onCommandPalette }: SidebarProp
           );
         })}
 
-        <div className="flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-[#6B7280] hover:text-[#F2F0EB] hover:bg-white/[0.04] transition-all cursor-pointer group relative">
-          <UserCircle className="w-4 h-4 flex-shrink-0" />
-          <AnimatePresence>
-            {!collapsed && (
-              <motion.span
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-                transition={{ duration: 0.12 }}
-                className="text-[13px] font-medium whitespace-nowrap"
-              >
-                Profile
-              </motion.span>
-            )}
-          </AnimatePresence>
-          {collapsed && (
-            <div className="absolute left-full ml-3 px-2.5 py-1.5 bg-[#0d0d1e] border border-white/[0.08] rounded-lg text-xs text-[#F2F0EB] opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity shadow-card z-50">
-              Profile
-            </div>
-          )}
-        </div>
-
-        <button onClick={handleLogout} className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-[#6B7280] hover:text-red-400 hover:bg-red-500/[0.06] transition-all group relative">
+<button onClick={handleLogout} className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-[#6B7280] hover:text-red-400 hover:bg-red-500/[0.06] transition-all group relative">
           <LogOut className="w-4 h-4 flex-shrink-0" />
           {!collapsed && <span className="text-[13px] font-medium">Sign Out</span>}
           {collapsed && (

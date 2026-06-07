@@ -76,12 +76,12 @@ export function Hero() {
                 <ArrowRight className="w-4 h-4" />
               </Button>
             </Link>
-            <button className="flex items-center gap-3 text-slate-400 hover:text-white transition-colors group">
+            <Link href="/demo" className="flex items-center gap-3 text-slate-400 hover:text-white transition-colors group">
               <div className="w-11 h-11 rounded-full border border-white/10 bg-white/[0.04] flex items-center justify-center group-hover:border-white/20 group-hover:bg-white/[0.08] group-hover:shadow-glow-xs transition-all duration-300">
                 <Play className="w-4 h-4 ml-0.5" />
               </div>
               <span className="text-sm font-medium">Watch 90-sec Demo</span>
-            </button>
+            </Link>
           </motion.div>
 
           {/* Dashboard preview */}

@@ -2,11 +2,11 @@
 
 import { useState } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
-import { X, Eye, EyeOff, Loader2, CheckCircle2, AlertCircle } from "lucide-react";
+import { X, Eye, EyeOff, Loader2, CheckCircle2, AlertCircle, ExternalLink } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
-type Broker = "tradelocker" | "mt5";
+type Broker = "tradelocker" | "mt5" | "ctrader";
 
 interface Props {
   open: boolean;
@@ -15,23 +15,34 @@ interface Props {
   onConnected: () => void;
 }
 
+const BROKER_LABELS: Record<Broker, string> = {
+  tradelocker: "TradeLocker",
+  mt5:         "MetaTrader 5",
+  ctrader:     "cTrader",
+};
+
 export function BrokerConnectModal({ open, defaultBroker = "tradelocker", onClose, onConnected }: Props) {
   const [broker, setBroker] = useState<Broker>(defaultBroker);
   const [showPassword, setShowPassword] = useState(false);
-  const [loading, setLoading] = useState(false);
-  const [result, setResult] = useState<{ ok: boolean; message: string } | null>(null);
+  const [loading, setLoading]   = useState(false);
+  const [result, setResult]     = useState<{ ok: boolean; message: string } | null>(null);
 
   // TradeLocker fields
-  const [tlEmail, setTlEmail] = useState("");
+  const [tlEmail,    setTlEmail]    = useState("");
   const [tlPassword, setTlPassword] = useState("");
-  const [tlServer, setTlServer] = useState("");
-  const [tlEnv, setTlEnv] = useState<"live" | "demo">("live");
+  const [tlServer,   setTlServer]   = useState("");
+  const [tlEnv,      setTlEnv]      = useState<"live" | "demo">("live");
 
   // MT5 fields
-  const [mt5Login, setMt5Login] = useState("");
+  const [mt5Login,    setMt5Login]    = useState("");
   const [mt5Password, setMt5Password] = useState("");
-  const [mt5Server, setMt5Server] = useState("");
-  const [mt5Name, setMt5Name] = useState("");
+  const [mt5Server,   setMt5Server]   = useState("");
+  const [mt5Name,     setMt5Name]     = useState("");
+
+  // cTrader fields
+  const [ctClientId,     setCtClientId]     = useState("");
+  const [ctClientSecret, setCtClientSecret] = useState("");
+  const [ctShowSecret,   setCtShowSecret]   = useState(false);
 
   const reset = () => {
     setResult(null);
@@ -39,10 +50,7 @@ export function BrokerConnectModal({ open, defaultBroker = "tradelocker", onClos
     setLoading(false);
   };
 
-  const handleClose = () => {
-    reset();
-    onClose();
-  };
+  const handleClose = () => { reset(); onClose(); };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -50,32 +58,45 @@ export function BrokerConnectModal({ open, defaultBroker = "tradelocker", onClos
     setResult(null);
 
     try {
-      const endpoint =
-        broker === "tradelocker"
-          ? "/api/brokers/tradelocker/connect"
-          : "/api/brokers/mt5/connect";
+      // ── cTrader: OAuth redirect flow ──────────────────────────────────────
+      if (broker === "ctrader") {
+        const res  = await fetch("/api/brokers/ctrader/connect", {
+          method:  "POST",
+          headers: { "Content-Type": "application/json" },
+          body:    JSON.stringify({ clientId: ctClientId, clientSecret: ctClientSecret }),
+        });
+        const json = await res.json();
+        if (!res.ok) {
+          setResult({ ok: false, message: json.error ?? "Failed to start OAuth" });
+        } else {
+          // Leave the modal open briefly so the user sees the redirect message
+          setResult({ ok: true, message: "Redirecting to cTrader…" });
+          setTimeout(() => { window.location.href = json.authUrl; }, 800);
+        }
+        return;
+      }
 
-      const body =
-        broker === "tradelocker"
-          ? { email: tlEmail, password: tlPassword, server: tlServer, environment: tlEnv }
-          : { login: mt5Login, password: mt5Password, server: mt5Server, accountName: mt5Name };
+      // ── TradeLocker / MT5: direct credentials flow ────────────────────────
+      const endpoint = broker === "tradelocker"
+        ? "/api/brokers/tradelocker/connect"
+        : "/api/brokers/mt5/connect";
 
-      const res = await fetch(endpoint, {
-        method: "POST",
+      const body = broker === "tradelocker"
+        ? { email: tlEmail, password: tlPassword, server: tlServer, environment: tlEnv }
+        : { login: mt5Login, password: mt5Password, server: mt5Server, accountName: mt5Name };
+
+      const res  = await fetch(endpoint, {
+        method:  "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
+        body:    JSON.stringify(body),
       });
-
       const json = await res.json();
 
       if (!res.ok) {
         setResult({ ok: false, message: json.error ?? "Connection failed" });
       } else {
         setResult({ ok: true, message: "Account connected successfully!" });
-        setTimeout(() => {
-          onConnected();
-          handleClose();
-        }, 1200);
+        setTimeout(() => { onConnected(); handleClose(); }, 1200);
       }
     } catch {
       setResult({ ok: false, message: "Network error — please try again" });
@@ -90,8 +111,9 @@ export function BrokerConnectModal({ open, defaultBroker = "tradelocker", onClos
         <Dialog.Overlay className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50" />
         <Dialog.Content className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-50 w-full max-w-md">
           <div className="glass rounded-2xl p-6 shadow-2xl border border-white/[0.08]">
+
             {/* Header */}
-            <div className="flex items-center justify-between mb-6">
+            <div className="flex items-center justify-between mb-5">
               <Dialog.Title className="text-base font-bold text-white">Connect Broker</Dialog.Title>
               <Dialog.Close asChild>
                 <button onClick={handleClose} className="w-7 h-7 rounded-lg hover:bg-white/[0.08] flex items-center justify-center text-slate-400 hover:text-white transition-colors">
@@ -101,27 +123,29 @@ export function BrokerConnectModal({ open, defaultBroker = "tradelocker", onClos
             </div>
 
             {/* Broker tabs */}
-            <div className="flex gap-2 mb-6 p-1 rounded-xl bg-white/[0.04] border border-white/[0.06]">
-              {(["tradelocker", "mt5"] as Broker[]).map((b) => (
+            <div className="flex gap-1.5 mb-5 p-1 rounded-xl bg-white/[0.04] border border-white/[0.06]">
+              {(["tradelocker", "mt5", "ctrader"] as Broker[]).map((b) => (
                 <button
                   key={b}
+                  type="button"
                   onClick={() => { setBroker(b); setResult(null); }}
                   className={cn(
-                    "flex-1 py-2 rounded-lg text-[13px] font-semibold transition-all",
+                    "flex-1 py-2 rounded-lg text-[12px] font-semibold transition-all",
                     broker === b
                       ? "bg-[#03588C] text-white shadow"
                       : "text-slate-400 hover:text-white"
                   )}
                 >
-                  {b === "tradelocker" ? "TradeLocker" : "MetaTrader 5"}
+                  {BROKER_LABELS[b]}
                 </button>
               ))}
             </div>
 
             <form onSubmit={handleSubmit} className="space-y-4">
-              {broker === "tradelocker" ? (
+
+              {/* ── TradeLocker ─────────────────────────────────────────── */}
+              {broker === "tradelocker" && (
                 <>
-                  {/* Environment toggle */}
                   <div className="flex gap-2">
                     {(["live", "demo"] as const).map((env) => (
                       <button
@@ -139,93 +163,62 @@ export function BrokerConnectModal({ open, defaultBroker = "tradelocker", onClos
                       </button>
                     ))}
                   </div>
-
                   <Field label="Email">
-                    <input
-                      type="email"
-                      required
-                      value={tlEmail}
-                      onChange={(e) => setTlEmail(e.target.value)}
-                      placeholder="your@email.com"
-                      className="input-field"
-                    />
+                    <input type="email" required value={tlEmail} onChange={(e) => setTlEmail(e.target.value)}
+                      placeholder="your@email.com" className="input-field" />
                   </Field>
-
                   <Field label="Password">
-                    <div className="relative">
-                      <input
-                        type={showPassword ? "text" : "password"}
-                        required
-                        value={tlPassword}
-                        onChange={(e) => setTlPassword(e.target.value)}
-                        placeholder="••••••••"
-                        className="input-field pr-10"
-                      />
-                      <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-white">
-                        {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                      </button>
-                    </div>
+                    <PasswordInput value={tlPassword} onChange={setTlPassword} show={showPassword} onToggle={() => setShowPassword(!showPassword)} />
                   </Field>
-
                   <Field label="Server" hint="e.g. FTMO-Server3, TheFundedTrader-Live">
-                    <input
-                      type="text"
-                      required
-                      value={tlServer}
-                      onChange={(e) => setTlServer(e.target.value)}
-                      placeholder="FTMO-Server3"
-                      className="input-field"
-                    />
+                    <input type="text" required value={tlServer} onChange={(e) => setTlServer(e.target.value)}
+                      placeholder="FTMO-Server3" className="input-field" />
                   </Field>
                 </>
-              ) : (
+              )}
+
+              {/* ── MetaTrader 5 ────────────────────────────────────────── */}
+              {broker === "mt5" && (
                 <>
                   <Field label="Account Login (number)">
-                    <input
-                      type="text"
-                      required
-                      value={mt5Login}
-                      onChange={(e) => setMt5Login(e.target.value)}
-                      placeholder="12345678"
-                      className="input-field"
-                    />
+                    <input type="text" required value={mt5Login} onChange={(e) => setMt5Login(e.target.value)}
+                      placeholder="12345678" className="input-field" />
                   </Field>
-
                   <Field label="Password">
-                    <div className="relative">
-                      <input
-                        type={showPassword ? "text" : "password"}
-                        required
-                        value={mt5Password}
-                        onChange={(e) => setMt5Password(e.target.value)}
-                        placeholder="••••••••"
-                        className="input-field pr-10"
-                      />
-                      <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-white">
-                        {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                      </button>
-                    </div>
+                    <PasswordInput value={mt5Password} onChange={setMt5Password} show={showPassword} onToggle={() => setShowPassword(!showPassword)} />
                   </Field>
-
                   <Field label="Server" hint="e.g. ICMarkets-Live, Pepperstone-MT5">
-                    <input
-                      type="text"
-                      required
-                      value={mt5Server}
-                      onChange={(e) => setMt5Server(e.target.value)}
-                      placeholder="ICMarkets-Live04"
-                      className="input-field"
-                    />
+                    <input type="text" required value={mt5Server} onChange={(e) => setMt5Server(e.target.value)}
+                      placeholder="ICMarkets-Live04" className="input-field" />
                   </Field>
-
                   <Field label="Account name (optional)">
-                    <input
-                      type="text"
-                      value={mt5Name}
-                      onChange={(e) => setMt5Name(e.target.value)}
-                      placeholder="My Live Account"
-                      className="input-field"
-                    />
+                    <input type="text" value={mt5Name} onChange={(e) => setMt5Name(e.target.value)}
+                      placeholder="My Live Account" className="input-field" />
+                  </Field>
+                </>
+              )}
+
+              {/* ── cTrader ─────────────────────────────────────────────── */}
+              {broker === "ctrader" && (
+                <>
+                  <div className="rounded-xl bg-[#03588C]/10 border border-[#03588C]/25 p-3 space-y-1">
+                    <p className="text-[11px] text-[#4BA3D4] font-semibold">OAuth 2.0 flow</p>
+                    <p className="text-[11px] text-slate-400 leading-relaxed">
+                      Create an app at{" "}
+                      <a href="https://openapi.ctrader.com" target="_blank" rel="noopener noreferrer"
+                        className="underline hover:text-white inline-flex items-center gap-0.5">
+                        openapi.ctrader.com <ExternalLink className="w-3 h-3" />
+                      </a>
+                      {" "}and set the Redirect URI to your app URL +{" "}
+                      <span className="font-mono text-white/60">/api/brokers/ctrader/callback</span>
+                    </p>
+                  </div>
+                  <Field label="Client ID">
+                    <input type="text" required value={ctClientId} onChange={(e) => setCtClientId(e.target.value)}
+                      placeholder="12345" className="input-field" />
+                  </Field>
+                  <Field label="Client Secret">
+                    <PasswordInput value={ctClientSecret} onChange={setCtClientSecret} show={ctShowSecret} onToggle={() => setCtShowSecret(!ctShowSecret)} />
                   </Field>
                 </>
               )}
@@ -234,9 +227,13 @@ export function BrokerConnectModal({ open, defaultBroker = "tradelocker", onClos
               {result && (
                 <div className={cn(
                   "flex items-center gap-2 p-3 rounded-xl text-[13px] font-medium",
-                  result.ok ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20" : "bg-rose-500/10 text-rose-400 border border-rose-500/20"
+                  result.ok
+                    ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20"
+                    : "bg-rose-500/10 text-rose-400 border border-rose-500/20"
                 )}>
-                  {result.ok ? <CheckCircle2 className="w-4 h-4 flex-shrink-0" /> : <AlertCircle className="w-4 h-4 flex-shrink-0" />}
+                  {result.ok
+                    ? <CheckCircle2 className="w-4 h-4 flex-shrink-0" />
+                    : <AlertCircle  className="w-4 h-4 flex-shrink-0" />}
                   {result.message}
                 </div>
               )}
@@ -244,13 +241,17 @@ export function BrokerConnectModal({ open, defaultBroker = "tradelocker", onClos
               <Button type="submit" className="w-full" disabled={loading}>
                 {loading ? (
                   <><Loader2 className="w-4 h-4 animate-spin" /> Connecting…</>
+                ) : broker === "ctrader" ? (
+                  <>Authorize with cTrader <ExternalLink className="w-3.5 h-3.5" /></>
                 ) : (
                   "Connect Account"
                 )}
               </Button>
 
               <p className="text-[11px] text-slate-600 text-center">
-                Your credentials are sent over HTTPS and never logged. Only tokens are stored.
+                {broker === "ctrader"
+                  ? "You'll be redirected to cTrader to authorize. Only tokens are stored."
+                  : "Your credentials are sent over HTTPS and never logged. Only tokens are stored."}
               </p>
             </form>
           </div>
@@ -260,12 +261,40 @@ export function BrokerConnectModal({ open, defaultBroker = "tradelocker", onClos
   );
 }
 
+// ── Shared sub-components ─────────────────────────────────────────────────
+
 function Field({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
   return (
     <div className="space-y-1.5">
       <label className="text-[12px] font-semibold text-slate-300">{label}</label>
       {hint && <p className="text-[11px] text-slate-600 -mt-1">{hint}</p>}
       {children}
+    </div>
+  );
+}
+
+function PasswordInput({ value, onChange, show, onToggle }: {
+  value: string;
+  onChange: (v: string) => void;
+  show: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <div className="relative">
+      <input
+        type={show ? "text" : "password"}
+        required
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder="••••••••"
+        className="input-field pr-10"
+      />
+      <button type="button" onClick={onToggle}
+        className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-white">
+        {show
+          ? <EyeOff className="w-4 h-4" />
+          : <Eye    className="w-4 h-4" />}
+      </button>
     </div>
   );
 }
