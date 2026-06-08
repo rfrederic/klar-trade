@@ -232,7 +232,7 @@ export default function AICoachPage() {
             <p className="text-xs text-slate-400 mb-4 leading-relaxed">
               Your AI-generated weekly performance report is ready. Includes discipline analysis and improvement priorities.
             </p>
-            <Button variant="premium" size="sm" className="w-full">
+            <Button variant="default" size="sm" className="w-full">
               View Report
               <ArrowRight className="w-3.5 h-3.5" />
             </Button>
