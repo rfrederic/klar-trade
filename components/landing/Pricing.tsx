@@ -66,7 +66,7 @@ const plans = [
       "Dedicated account manager",
     ],
     cta: "Start Elite Trial",
-    ctaVariant: "premium" as const,
+    ctaVariant: "gold" as const,
     highlighted: false,
   },
 ];
