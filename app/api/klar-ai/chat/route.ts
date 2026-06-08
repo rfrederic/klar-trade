@@ -2,7 +2,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { createServerClient, createServiceClient } from "@/lib/supabase/server";
 import Anthropic from "@anthropic-ai/sdk";
 
-const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+let anthropic: Anthropic | null = null;
+function getAnthropic() {
+  if (!anthropic) anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+  return anthropic;
+}
 
 export async function POST(req: NextRequest) {
   const authClient = await createServerClient();
@@ -26,7 +30,7 @@ export async function POST(req: NextRequest) {
       content: m.content,
     }));
     try {
-      const response = await anthropic.messages.create({
+      const response = await getAnthropic().messages.create({
         model: "claude-haiku-4-5-20251001",
         max_tokens: 1024,
         system: systemOverride,
@@ -126,7 +130,7 @@ RULES:
   }));
 
   try {
-    const response = await anthropic.messages.create({
+    const response = await getAnthropic().messages.create({
       model: "claude-haiku-4-5-20251001",
       max_tokens: 1024,
       system: systemPrompt,

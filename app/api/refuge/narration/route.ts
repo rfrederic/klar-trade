@@ -2,7 +2,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { createServerClient } from "@/lib/supabase/server";
 import Groq from "groq-sdk";
 
-const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
+let groq: Groq | null = null;
+function getGroq() {
+  if (!groq) groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
+  return groq;
+}
 
 const MOOD_CONTEXT: Record<string, string> = {
   Rattled:  "the trader is reactive — still inside the last trade. Bring them back to their baseline.",
@@ -59,7 +63,7 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: "KlarAI not configured" }, { status: 503 });
     }
 
-    const completion = await groq.chat.completions.create({
+    const completion = await getGroq().chat.completions.create({
       model: "llama-3.1-8b-instant",
       messages: [{ role: "user", content: buildPrompt(exercise, type, mood) }],
     });
