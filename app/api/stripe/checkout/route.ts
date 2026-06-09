@@ -13,6 +13,8 @@ const PLAN_PRICE_MAP: Record<string, { priceId: string; mode: Stripe.Checkout.Se
 
 export async function POST(req: NextRequest) {
   try {
+    console.log("[stripe/checkout] STRIPE_SECRET_KEY length:", process.env.STRIPE_SECRET_KEY?.length ?? 0);
+
     if (!process.env.STRIPE_SECRET_KEY) {
       return NextResponse.json({ error: "Stripe is not configured" }, { status: 503 });
     }
@@ -20,6 +22,8 @@ export async function POST(req: NextRequest) {
     const { plan, email } = await req.json();
 
     const entry = PLAN_PRICE_MAP[plan as string];
+    console.log("[stripe/checkout] plan:", plan, "priceId:", entry?.priceId ?? "(missing)");
+
     if (!entry?.priceId) {
       return NextResponse.json({ error: "Invalid or unconfigured plan" }, { status: 400 });
     }
@@ -58,9 +62,11 @@ export async function POST(req: NextRequest) {
     });
 
     return NextResponse.json({ url: session.url });
-  } catch (err) {
-    const message = err instanceof Error ? err.message : "Unexpected error";
-    console.error("[stripe/checkout]", err);
-    return NextResponse.json({ error: message }, { status: 500 });
+  } catch (error) {
+    console.error("Stripe checkout error:", error);
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : "Unknown error" },
+      { status: 500 }
+    );
   }
 }
