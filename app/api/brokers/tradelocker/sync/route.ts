@@ -9,37 +9,6 @@ function getTLBase(environment?: string | null): string {
 
 export const maxDuration = 30;
 
-// ── Types ─────────────────────────────────────────────────────────────────
-
-interface TLOrder {
-  id?:           string;
-  orderId?:      string;
-  symbol?:       string;
-  instrument?:   string;
-  side?:         string;
-  qty?:          number;
-  quantity?:     number;
-  price?:        number;
-  openPrice?:    number;
-  entryPrice?:   number;
-  filledPrice?:  number;
-  closePrice?:   number;
-  exitPrice?:    number;
-  profitLoss?:   number;
-  profit?:       number;
-  pnl?:          number;
-  commission?:   number;
-  swap?:         number;
-  status?:       string;
-  state?:        string;
-  openedAt?:     string;
-  closedAt?:     string;
-  openTime?:     string;
-  closeTime?:    string;
-  doneTime?:     string;
-  updatedAt?:    string;
-}
-
 // ── Helpers ───────────────────────────────────────────────────────────────
 
 function extractError(rawText: string): string {
@@ -51,36 +20,40 @@ function extractError(rawText: string): string {
   }
 }
 
-function isClosedOrder(o: TLOrder): boolean {
-  const s = (o.status ?? o.state ?? "").toLowerCase();
-  return ["filled", "closed", "done", "completed"].some(k => s.includes(k));
-}
-
-function mapOrder(o: TLOrder, userId: string): Record<string, unknown> | null {
-  const closedAt = o.closedAt ?? o.closeTime ?? o.doneTime ?? null;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function mapOrder(o: Record<string, any>, userId: string): Record<string, unknown> | null {
+  // Probe every plausible closed-at field
+  const closedAt =
+    o.closedAt   ?? o.closeTime  ?? o.doneTime   ??
+    o.closed_at  ?? o.close_time ?? o.done_time  ??
+    o.closeDate  ?? o.finishTime ?? o.endTime     ?? null;
   if (!closedAt) return null;
 
-  const symbol = (o.symbol ?? o.instrument ?? "").toUpperCase();
+  // Probe every plausible symbol field
+  const symbol = (
+    o.symbol      ?? o.instrument  ?? o.tradingSymbol ??
+    o.symbolName  ?? o.name        ?? o.ticker        ?? ""
+  ).toString().toUpperCase();
   if (!symbol) return null;
 
-  const side      = (o.side ?? "").toLowerCase();
-  const direction = side === "sell" ? "short" : "long";
+  const side      = (o.side ?? o.direction ?? o.type ?? "").toString().toLowerCase();
+  const direction = (side === "sell" || side === "short") ? "short" : "long";
 
-  const rawPnl     = o.profitLoss ?? o.profit ?? o.pnl ?? null;
-  const commission = o.commission ?? 0;
-  const swap       = o.swap       ?? 0;
+  const rawPnl     = o.profitLoss ?? o.profit ?? o.pnl ?? o.pl ?? o.realizedPnl ?? o.realizedPl ?? null;
+  const commission = o.commission ?? o.fee ?? o.fees ?? 0;
+  const swap       = o.swap ?? o.financing ?? 0;
   const pnl        = rawPnl != null
-    ? Math.round((rawPnl + commission + swap) * 100) / 100
+    ? Math.round((Number(rawPnl) + Number(commission) + Number(swap)) * 100) / 100
     : null;
 
   return {
     user_id:       userId,
     symbol,
     direction,
-    entry_price:   o.openPrice  ?? o.entryPrice  ?? o.price      ?? null,
-    exit_price:    o.closePrice ?? o.exitPrice   ?? o.filledPrice ?? null,
+    entry_price:   o.openPrice   ?? o.entryPrice  ?? o.openRate   ?? o.price       ?? null,
+    exit_price:    o.closePrice  ?? o.exitPrice   ?? o.closeRate  ?? o.filledPrice  ?? null,
     pnl,
-    volume:        o.qty        ?? o.quantity    ?? null,
+    volume:        o.qty         ?? o.quantity    ?? o.volume     ?? o.size         ?? null,
     closed_at:     closedAt,
     source:        "tradelocker",
     followed_plan: true,
@@ -90,6 +63,7 @@ function mapOrder(o: TLOrder, userId: string): Record<string, unknown> | null {
 // ── Route ─────────────────────────────────────────────────────────────────
 
 export async function POST(req: NextRequest) {
+  const debugMode = req.nextUrl.searchParams.get("debug") === "true";
   const authClient = await createServerClient();
   const { data: { user } } = await authClient.auth.getUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -122,6 +96,14 @@ export async function POST(req: NextRequest) {
     );
   }
 
+  console.log("[tradelocker/sync] conn:", {
+    id:          conn.id,
+    account_id:  conn.account_id,
+    account_num: conn.account_num,
+    server:      conn.server,
+    environment: conn.environment,
+  });
+
   // ── 2. Refresh JWT token ──────────────────────────────────────────────────
   const TL_BASE    = getTLBase(conn.environment as string | null);
   let accessToken  = conn.access_token  as string;
@@ -136,18 +118,18 @@ export async function POST(req: NextRequest) {
       body:    JSON.stringify({ refreshToken }),
     });
     const refreshText = await refreshRes.text();
-    console.log("[tradelocker/sync] refresh:", refreshRes.status, refreshText.slice(0, 300));
+    console.log("[tradelocker/sync] refresh status:", refreshRes.status, refreshText.slice(0, 300));
 
     if (refreshRes.ok) {
       const parsed = JSON.parse(refreshText);
       accessToken  = parsed.accessToken  ?? parsed.access_token  ?? accessToken;
       refreshToken = parsed.refreshToken ?? parsed.refresh_token ?? refreshToken;
+      console.log("[tradelocker/sync] token refreshed OK");
     } else {
-      // If refresh fails, try the stored access token as-is — it may still be valid
-      console.warn("[tradelocker/sync] token refresh failed:", extractError(refreshText));
+      console.warn("[tradelocker/sync] token refresh failed — continuing with stored token:", extractError(refreshText));
     }
   } catch (err) {
-    console.warn("[tradelocker/sync] token refresh error (continuing with stored token):", err);
+    console.warn("[tradelocker/sync] token refresh error (continuing):", err);
   }
 
   const authHeader = { Authorization: `Bearer ${accessToken}` };
@@ -162,18 +144,23 @@ export async function POST(req: NextRequest) {
   try {
     const accRes  = await fetch(accountsUrl, { headers: authHeader });
     const accText = await accRes.text();
-    console.log("[tradelocker/sync] all-accounts:", accRes.status, accText.slice(0, 400));
+    console.log("[tradelocker/sync] all-accounts status:", accRes.status);
+    console.log("[tradelocker/sync] all-accounts body:", accText.slice(0, 800));
 
     if (accRes.ok) {
       const b        = JSON.parse(accText);
       const accounts = Array.isArray(b) ? b : (b.accounts ?? b.d?.d ?? []);
+      console.log("[tradelocker/sync] accounts found:", accounts.length);
       const first    = accounts[0];
       if (first) {
+        console.log("[tradelocker/sync] first account keys:", Object.keys(first));
+        console.log("[tradelocker/sync] first account:", JSON.stringify(first));
         tlAccountId = String(first.id ?? first.accountId ?? tlAccountId);
         accNum      = String(first.accNum ?? first.accountNumber ?? first.login ?? accNum);
         if (first.balance != null) {
           balance = `$${Number(first.balance).toLocaleString("en-US", { minimumFractionDigits: 2 })}`;
         }
+        console.log("[tradelocker/sync] resolved accountId:", tlAccountId, "accNum:", accNum, "balance:", balance);
       }
     } else if (accRes.status === 401) {
       return NextResponse.json(
@@ -185,7 +172,7 @@ export async function POST(req: NextRequest) {
     console.warn("[tradelocker/sync] all-accounts fetch failed (non-fatal):", err);
   }
 
-  // ── 4. Determine sync window (watermark) ──────────────────────────────────
+  // ── 4. Determine sync window ──────────────────────────────────────────────
   const { data: latestTrade } = await supabase
     .from("trades")
     .select("closed_at")
@@ -195,43 +182,140 @@ export async function POST(req: NextRequest) {
     .limit(1)
     .maybeSingle();
 
-  const syncFrom = latestTrade?.closed_at
-    ? new Date(new Date(latestTrade.closed_at).getTime() - 5 * 60 * 1000)
-    : new Date(Date.now() - 90 * 24 * 60 * 60 * 1000);
+  // In debug mode fetch ALL history; otherwise watermark from last trade
+  const syncFrom = (debugMode || !latestTrade?.closed_at)
+    ? new Date(0)
+    : new Date(new Date(latestTrade.closed_at).getTime() - 5 * 60 * 1000);
 
-  // ── 5. Fetch orders ───────────────────────────────────────────────────────
+  console.log("[tradelocker/sync] syncFrom:", syncFrom.toISOString(), debugMode ? "(debug — all history)" : "");
+
+  // ── 5. Fetch ordersHistory ────────────────────────────────────────────────
   let inserted = 0;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const debugInfo: Record<string, any> = {};
 
-  if (tlAccountId) {
+  if (!tlAccountId) {
+    console.warn("[tradelocker/sync] no accountId resolved — skipping orders fetch");
+  } else {
     const ordersUrl = `${TL_BASE}/trade/accounts/${tlAccountId}/ordersHistory`;
-    console.log("[tradelocker/sync] GET", ordersUrl, "accNum:", accNum);
+    console.log("[tradelocker/sync] GET", ordersUrl);
+    console.log("[tradelocker/sync] headers: Authorization=Bearer [token], accNum=", accNum);
+
     try {
       const ordRes  = await fetch(ordersUrl, {
         headers: { ...authHeader, accNum },
       });
       const ordText = await ordRes.text();
-      console.log("[tradelocker/sync] ordersHistory:", ordRes.status, ordText.slice(0, 400));
+
+      console.log("[tradelocker/sync] ordersHistory status:", ordRes.status);
+      // Log the FULL response (up to 3000 chars) so we can see the shape
+      console.log("[tradelocker/sync] ordersHistory raw (3000 chars):", ordText.slice(0, 3000));
+
+      if (debugMode) {
+        debugInfo.ordersHistoryStatus  = ordRes.status;
+        debugInfo.ordersHistoryRaw     = ordText.slice(0, 5000);
+      }
 
       if (ordRes.ok) {
-        const b      = JSON.parse(ordText);
-        const orders: TLOrder[] = Array.isArray(b) ? b : (b.orders ?? b.data ?? b.d?.d ?? b.history ?? []);
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const b: any = JSON.parse(ordText);
 
-        const tradeRecords = orders
-          .filter(isClosedOrder)
-          .filter(o => {
-            const t = o.closedAt ?? o.closeTime ?? o.doneTime;
-            return t ? new Date(t) >= syncFrom : false;
-          })
-          .map(o => mapOrder(o, user.id))
-          .filter((r): r is Record<string, unknown> => r !== null);
+        // Log top-level shape
+        console.log("[tradelocker/sync] response typeof:", typeof b, Array.isArray(b) ? "(array)" : "(object)");
+        if (!Array.isArray(b)) {
+          console.log("[tradelocker/sync] top-level keys:", Object.keys(b));
+          // Log nested keys one level deep
+          for (const k of Object.keys(b)) {
+            const v = b[k];
+            if (Array.isArray(v)) console.log(`[tradelocker/sync]   b.${k} is array[${v.length}]`);
+            else if (v && typeof v === "object") console.log(`[tradelocker/sync]   b.${k} keys:`, Object.keys(v));
+          }
+        }
 
-        console.log("[tradelocker/sync] mapping", tradeRecords.length, "closed trades");
+        // Try every plausible wrapper path
+        const rawOrders =
+          Array.isArray(b)             ? b                    :
+          Array.isArray(b.d?.d)        ? b.d.d                :
+          Array.isArray(b.orders)      ? b.orders             :
+          Array.isArray(b.data)        ? b.data               :
+          Array.isArray(b.history)     ? b.history            :
+          Array.isArray(b.items)       ? b.items              :
+          Array.isArray(b.trades)      ? b.trades             :
+          Array.isArray(b.result)      ? b.result             :
+          Array.isArray(b.results)     ? b.results            :
+          Array.isArray(b.d)           ? b.d                  : [];
 
+        console.log("[tradelocker/sync] raw orders array length:", rawOrders.length);
+
+        if (rawOrders.length > 0) {
+          console.log("[tradelocker/sync] FIRST ORDER (full):", JSON.stringify(rawOrders[0], null, 2));
+          console.log("[tradelocker/sync] first order keys:", Object.keys(rawOrders[0]));
+
+          if (rawOrders.length > 1) {
+            console.log("[tradelocker/sync] SECOND ORDER (full):", JSON.stringify(rawOrders[1], null, 2));
+          }
+
+          if (debugMode) {
+            debugInfo.rawOrdersLength = rawOrders.length;
+            debugInfo.firstOrderKeys  = Object.keys(rawOrders[0]);
+            debugInfo.firstOrder      = rawOrders[0];
+            debugInfo.secondOrder     = rawOrders[1] ?? null;
+          }
+
+          // Log status/state values to check the closed-order field
+          const statusSample = rawOrders.slice(0, 5).map((o: Record<string, unknown>) => ({
+            status:   o.status,
+            state:    o.state,
+            type:     o.type,
+            side:     o.side,
+            closedAt: o.closedAt ?? o.closeTime ?? o.doneTime ?? o.closed_at ?? o.close_time,
+            symbol:   o.symbol   ?? o.instrument ?? o.tradingSymbol,
+          }));
+          console.log("[tradelocker/sync] status/field sample (first 5):", JSON.stringify(statusSample, null, 2));
+          if (debugMode) debugInfo.statusSample = statusSample;
+        } else {
+          console.warn("[tradelocker/sync] ordersHistory returned 0 orders — array is empty");
+          if (debugMode) debugInfo.rawOrdersLength = 0;
+        }
+
+        // Filter: only orders with a resolvable closedAt (ordersHistory = already closed, but be safe)
+        const withCloseDate = rawOrders.filter((o: Record<string, unknown>) =>
+          o.closedAt   ?? o.closeTime  ?? o.doneTime   ??
+          o.closed_at  ?? o.close_time ?? o.done_time  ??
+          o.closeDate  ?? o.finishTime ?? o.endTime
+        );
+        console.log("[tradelocker/sync] orders with close date:", withCloseDate.length, "of", rawOrders.length);
+
+        const afterWatermark = withCloseDate.filter((o: Record<string, unknown>) => {
+          const t =
+            o.closedAt   ?? o.closeTime  ?? o.doneTime   ??
+            o.closed_at  ?? o.close_time ?? o.done_time  ??
+            o.closeDate  ?? o.finishTime ?? o.endTime;
+          return t ? new Date(t as string) >= syncFrom : false;
+        });
+        console.log("[tradelocker/sync] after watermark filter:", afterWatermark.length, "(syncFrom:", syncFrom.toISOString(), ")");
+
+        const tradeRecords = afterWatermark
+          .map((o: Record<string, unknown>) => mapOrder(o as Record<string, unknown>, user.id))
+          .filter((r: Record<string, unknown> | null): r is Record<string, unknown> => r !== null);
+
+        console.log("[tradelocker/sync] mappable trade records:", tradeRecords.length);
         if (tradeRecords.length > 0) {
+          console.log("[tradelocker/sync] sample mapped record:", JSON.stringify(tradeRecords[0]));
+        }
+
+        if (debugMode) {
+          debugInfo.withCloseDate    = withCloseDate.length;
+          debugInfo.afterWatermark   = afterWatermark.length;
+          debugInfo.mappableRecords  = tradeRecords.length;
+          debugInfo.sampleMapped     = tradeRecords[0] ?? null;
+        }
+
+        // Only persist when not in debug mode (debug is read-only)
+        if (!debugMode && tradeRecords.length > 0) {
           const windowStart = syncFrom.toISOString();
           const windowEnd   = new Date().toISOString();
 
-          // Delete unannotated TL trades in the sync window before re-inserting
           await supabase
             .from("trades")
             .delete()
@@ -239,9 +323,9 @@ export async function POST(req: NextRequest) {
             .eq("source", "tradelocker")
             .gte("closed_at", windowStart)
             .lte("closed_at", windowEnd)
-            .is("notes", null)
+            .is("notes",   null)
             .is("emotion", null)
-            .is("grade", null);
+            .is("grade",   null);
 
           const { error: insertErr } = await supabase.from("trades").insert(tradeRecords);
           if (insertErr) {
@@ -251,10 +335,13 @@ export async function POST(req: NextRequest) {
           inserted = tradeRecords.length;
         }
       } else {
-        console.warn("[tradelocker/sync] orders fetch failed:", extractError(ordText));
+        const errMsg = extractError(ordText);
+        console.warn("[tradelocker/sync] ordersHistory failed:", ordRes.status, errMsg);
+        if (debugMode) debugInfo.ordersHistoryError = errMsg;
       }
     } catch (err) {
-      console.warn("[tradelocker/sync] orders fetch error:", err);
+      console.warn("[tradelocker/sync] ordersHistory fetch error:", err);
+      if (debugMode) debugInfo.ordersHistoryException = String(err);
     }
   }
 
@@ -265,22 +352,24 @@ export async function POST(req: NextRequest) {
     .eq("user_id", user.id)
     .eq("source", "tradelocker");
 
-  // ── 7. Update broker_connections ──────────────────────────────────────────
-  const updatePayload: Record<string, unknown> = {
-    last_sync:     new Date().toISOString(),
-    status:        "connected",
-    trades_count:  tradesCount ?? 0,
-    access_token:  accessToken,
-    refresh_token: refreshToken,
-  };
-  if (balance)     updatePayload.balance      = balance;
-  if (tlAccountId) updatePayload.account_id   = tlAccountId;
-  if (accNum)      updatePayload.account_num  = accNum;
+  // ── 7. Update broker_connections (skip in debug mode) ────────────────────
+  if (!debugMode) {
+    const updatePayload: Record<string, unknown> = {
+      last_sync:     new Date().toISOString(),
+      status:        "connected",
+      trades_count:  tradesCount ?? 0,
+      access_token:  accessToken,
+      refresh_token: refreshToken,
+    };
+    if (balance)     updatePayload.balance     = balance;
+    if (tlAccountId) updatePayload.account_id  = tlAccountId;
+    if (accNum)      updatePayload.account_num = accNum;
 
-  await supabase
-    .from("broker_connections")
-    .update(updatePayload)
-    .eq("id", connectionId);
+    await supabase
+      .from("broker_connections")
+      .update(updatePayload)
+      .eq("id", connectionId);
+  }
 
   console.log(`[tradelocker/sync] done — balance: ${balance}, imported: ${inserted}`);
 
@@ -289,5 +378,6 @@ export async function POST(req: NextRequest) {
     balance:        balance ?? null,
     tradesImported: inserted,
     tradesTotal:    tradesCount ?? 0,
+    ...(debugMode ? { debug: debugInfo } : {}),
   });
 }
