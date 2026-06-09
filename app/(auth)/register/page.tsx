@@ -70,7 +70,7 @@ export default function RegisterPage() {
     }
 
     setSuccess(true);
-    router.refresh();
+    setTimeout(() => router.push("/checkout"), 1500);
   };
 
   return (
@@ -105,17 +105,17 @@ export default function RegisterPage() {
                 <div className="w-14 h-14 rounded-full bg-[#22C55E]/15 flex items-center justify-center mx-auto mb-4">
                   <Check className="w-7 h-7 text-[#22C55E]" strokeWidth={2.5} />
                 </div>
-                <h2 className="text-xl font-bold text-[#F2F0EB] mb-2">Welcome to KlarTrade!</h2>
-                <p className="text-sm text-[#6B7280] mb-6">Your account is ready. Let&apos;s build your edge.</p>
-                <Link href="/dashboard">
-                  <Button className="w-full">Go to Dashboard <ArrowRight className="w-4 h-4" /></Button>
+                <h2 className="text-xl font-bold text-[#F2F0EB] mb-2">Account created!</h2>
+                <p className="text-sm text-[#6B7280] mb-6">Taking you to checkout to start your 10-day trial…</p>
+                <Link href="/checkout">
+                  <Button className="w-full">Start 10-Day Trial <ArrowRight className="w-4 h-4" /></Button>
                 </Link>
               </motion.div>
             ) : (
               <motion.div key="form">
                 <div className="mb-6">
                   <h1 className="text-2xl font-bold text-[#F2F0EB] mb-1">Create your account</h1>
-                  <p className="text-sm text-[#6B7280]">Free forever. No card needed.</p>
+                  <p className="text-sm text-[#6B7280]">10-day trial · $10 to start.</p>
                 </div>
 
                 <form onSubmit={handleSubmit} className="space-y-4">

@@ -28,7 +28,7 @@ export async function POST(req: NextRequest) {
   const { error } = await supabase.auth.signUp({
     email,
     password,
-    options: { emailRedirectTo: `${req.nextUrl.origin}/dashboard` },
+    options: { emailRedirectTo: `${req.nextUrl.origin}/checkout` },
   });
 
   if (error) {

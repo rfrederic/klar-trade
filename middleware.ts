@@ -57,25 +57,26 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(loginUrl);
   }
 
-  // Trial expiry check — runs on dashboard routes, skips /choose-plan itself
-  if (isDashboard && user && !pathname.startsWith("/choose-plan")) {
+  // Plan gate — only allow dashboard access for paying users and admins
+  if (isDashboard && user) {
     const { data: profile } = await supabase
       .from("profiles")
-      .select("plan, trial_end, is_admin")
+      .select("plan, is_admin, stripe_customer_id")
       .eq("id", user.id)
       .maybeSingle();
 
-    // Admins bypass all payment and trial checks
-    if (!profile?.is_admin) {
-      if (
-        profile?.plan === "trial" &&
-        profile.trial_end &&
-        new Date(profile.trial_end) < new Date()
-      ) {
-        const url = request.nextUrl.clone();
-        url.pathname = "/choose-plan";
-        return NextResponse.redirect(url);
-      }
+    const plan = profile?.plan ?? null;
+    const hasPaidAccess =
+      profile?.is_admin ||
+      plan === "starter" ||
+      plan === "pro" ||
+      plan === "elite" ||
+      (plan === "trial" && !!profile?.stripe_customer_id);
+
+    if (!hasPaidAccess) {
+      const url = request.nextUrl.clone();
+      url.pathname = "/checkout";
+      return NextResponse.redirect(url);
     }
   }
 
