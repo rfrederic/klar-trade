@@ -14,15 +14,34 @@ const plusJakarta = Plus_Jakarta_Sans({
   display: "swap",
 });
 
+const BASE_URL = "https://klartrade.com";
+
 export const metadata: Metadata = {
-  title: "Klartrade — Trade with Clarity, Not Emotion",
+  metadataBase: new URL(BASE_URL),
+  title: "KlarTrade — Trade with Clarity, Not Emotion",
   description:
     "The AI-powered trading platform that builds unbreakable discipline, manages risk intelligently, and reviews your psychology — so every decision is driven by your edge, not your fear.",
   keywords: ["trading", "AI", "discipline", "risk management", "trading journal", "psychology"],
   openGraph: {
-    title: "Klartrade — Trade with Clarity, Not Emotion",
-    description: "AI-powered trading discipline platform for serious traders.",
+    title: "KlarTrade — Trade with Clarity, Not Emotion",
+    description: "Trade with Clarity. Execute with Discipline. AI-powered trading intelligence for serious traders.",
+    url: BASE_URL,
+    siteName: "KlarTrade",
     type: "website",
+    images: [
+      {
+        url: "/og-image.png",
+        width: 1200,
+        height: 630,
+        alt: "KlarTrade — Trade with Clarity, Not Emotion",
+      },
+    ],
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "KlarTrade — Trade with Clarity, Not Emotion",
+    description: "Trade with Clarity. Execute with Discipline. AI-powered trading intelligence for serious traders.",
+    images: ["/og-image.png"],
   },
 };
 
