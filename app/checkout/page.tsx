@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { Check, Loader2, Instagram } from "lucide-react";
@@ -111,15 +111,28 @@ const plans = [
 export default function CheckoutPage() {
   const [selecting, setSelecting] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [email, setEmail] = useState("");
+  const [isLoggedIn, setIsLoggedIn] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    fetch("/api/auth/me")
+      .then((r) => setIsLoggedIn(r.ok))
+      .catch(() => setIsLoggedIn(false));
+  }, []);
 
   async function handleSelect(planId: string) {
+    // Require email from unauthenticated users before sending them to Stripe
+    if (isLoggedIn === false && !email.trim()) {
+      setError("Please enter your email address to continue.");
+      return;
+    }
     setSelecting(planId);
     setError(null);
     try {
       const res = await fetch("/api/stripe/checkout", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ plan: planId }),
+        body: JSON.stringify({ plan: planId, email: email.trim() || undefined }),
       });
       const data = await res.json();
       if (!res.ok) {
@@ -227,6 +240,28 @@ export default function CheckoutPage() {
               Start with the trial. Upgrade any time.
             </p>
           </div>
+
+          {/* Email input for unauthenticated users */}
+          {isLoggedIn === false && (
+            <div className="mb-8 max-w-md mx-auto">
+              <label className="block text-xs font-medium text-[#6B7280] mb-2">
+                Your email address
+              </label>
+              <input
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="you@example.com"
+                className="w-full bg-white/[0.04] border border-white/[0.08] rounded-xl px-4 py-3 text-sm text-[#F2F0EB] placeholder-[#6B7280] focus:outline-none focus:border-[#03588C]/60 transition-all"
+              />
+              <p className="text-[11px] text-[#6B7280] mt-2">
+                Already have an account?{" "}
+                <Link href="/login" className="text-[#4BA3D4] hover:text-[#F2F0EB] transition-colors">
+                  Sign in first
+                </Link>
+              </p>
+            </div>
+          )}
 
           {/* Trial card — full width, above the 3 tiers */}
           <div className="mb-4">

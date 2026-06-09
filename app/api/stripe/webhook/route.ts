@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import Stripe from "stripe";
 import { createServiceClient } from "@/lib/supabase/server";
 
+export const dynamic = "force-dynamic";
+
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!);
 
 // Map Stripe price IDs → internal plan names
@@ -39,26 +41,58 @@ export async function POST(req: NextRequest) {
     );
 
     const userId  = session.metadata?.userId;
+    const email   = session.metadata?.email ?? session.customer_details?.email ?? null;
     const priceId = session.line_items?.data[0]?.price?.id;
-    const plan    = priceId ? planFromPriceId(priceId) : null;
+    const plan    = priceId ? planFromPriceId(priceId) : (session.metadata?.plan ?? null);
 
-    if (!userId || !plan) {
-      console.error("webhook: missing userId or unrecognised priceId", { userId, priceId });
+    if (!plan) {
+      console.error("webhook: unrecognised priceId", { priceId });
       return NextResponse.json({ error: "Unprocessable" }, { status: 422 });
     }
 
-    await supabase
-      .from("profiles")
-      .upsert(
-        {
-          id: userId,
-          plan,
-          trial_end: null,
-          stripe_customer_id: session.customer as string ?? null,
-          stripe_subscription_id: session.subscription as string ?? null,
-        },
-        { onConflict: "id" }
-      );
+    const profileData = {
+      plan,
+      trial_end: null,
+      stripe_customer_id: (session.customer as string) ?? null,
+      stripe_subscription_id: (session.subscription as string) ?? null,
+    };
+
+    if (userId) {
+      // Authenticated checkout — update existing profile directly
+      await supabase
+        .from("profiles")
+        .upsert({ id: userId, ...profileData }, { onConflict: "id" });
+    } else if (email) {
+      // Unauthenticated checkout — find user by email and update profile,
+      // or create the Supabase user so they can log in after paying
+      const { data: authData } = await supabase.auth.admin.listUsers();
+      const existingUser = authData?.users?.find((u) => u.email === email);
+
+      if (existingUser) {
+        await supabase
+          .from("profiles")
+          .upsert({ id: existingUser.id, ...profileData }, { onConflict: "id" });
+      } else {
+        // Create Supabase account — user will receive a "set your password" link
+        const { data: created } = await supabase.auth.admin.createUser({
+          email,
+          email_confirm: true,
+          user_metadata: { plan },
+        });
+        if (created?.user) {
+          await supabase
+            .from("profiles")
+            .upsert({ id: created.user.id, ...profileData }, { onConflict: "id" });
+          await supabase.auth.admin.generateLink({
+            type: "magiclink",
+            email,
+            options: { redirectTo: `${process.env.NEXT_PUBLIC_SITE_URL ?? "https://klartrade.com"}/dashboard` },
+          });
+        }
+      }
+    } else {
+      console.error("webhook: no userId or email to associate payment");
+    }
   }
 
   // ── customer.subscription.deleted ──────────────────────────
