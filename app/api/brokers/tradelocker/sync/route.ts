@@ -1,7 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServerClient, createServiceClient } from "@/lib/supabase/server";
 
-const TL_BASE = "https://broker-api.tradelocker.com";
+function getTLBase(environment?: string | null): string {
+  return environment === "demo"
+    ? "https://demo.tradelocker.com/backend-api"
+    : "https://live.tradelocker.com/backend-api";
+}
 
 export const maxDuration = 30;
 
@@ -101,7 +105,7 @@ export async function POST(req: NextRequest) {
   // ── 1. Load connection ────────────────────────────────────────────────────
   const { data: conn, error: connErr } = await supabase
     .from("broker_connections")
-    .select("id, account_id, access_token, refresh_token, server")
+    .select("id, account_id, account_num, access_token, refresh_token, server, environment")
     .eq("id", connectionId)
     .eq("user_id", user.id)
     .eq("broker", "tradelocker")
@@ -119,6 +123,7 @@ export async function POST(req: NextRequest) {
   }
 
   // ── 2. Refresh JWT token ──────────────────────────────────────────────────
+  const TL_BASE    = getTLBase(conn.environment as string | null);
   let accessToken  = conn.access_token  as string;
   let refreshToken = conn.refresh_token as string;
 
@@ -147,23 +152,25 @@ export async function POST(req: NextRequest) {
 
   const authHeader = { Authorization: `Bearer ${accessToken}` };
 
-  // ── 3. Fetch accounts → latest balance ───────────────────────────────────
+  // ── 3. Fetch accounts → latest balance + accNum ──────────────────────────
   let balance:     string | null = null;
-  let tlAccountId: string        = conn.account_id as string ?? "";
+  let tlAccountId: string        = (conn.account_id  as string) ?? "";
+  let accNum:      string        = (conn.account_num  as string) ?? tlAccountId;
 
-  const accountsUrl = `${TL_BASE}/trade/accounts`;
+  const accountsUrl = `${TL_BASE}/auth/jwt/all-accounts`;
   console.log("[tradelocker/sync] GET", accountsUrl);
   try {
     const accRes  = await fetch(accountsUrl, { headers: authHeader });
     const accText = await accRes.text();
-    console.log("[tradelocker/sync] accounts:", accRes.status, accText.slice(0, 400));
+    console.log("[tradelocker/sync] all-accounts:", accRes.status, accText.slice(0, 400));
 
     if (accRes.ok) {
       const b        = JSON.parse(accText);
-      const accounts = Array.isArray(b) ? b : (b.accounts ?? b.data ?? []);
+      const accounts = Array.isArray(b) ? b : (b.accounts ?? b.d?.d ?? []);
       const first    = accounts[0];
       if (first) {
         tlAccountId = String(first.id ?? first.accountId ?? tlAccountId);
+        accNum      = String(first.accNum ?? first.accountNumber ?? first.login ?? accNum);
         if (first.balance != null) {
           balance = `$${Number(first.balance).toLocaleString("en-US", { minimumFractionDigits: 2 })}`;
         }
@@ -175,7 +182,7 @@ export async function POST(req: NextRequest) {
       );
     }
   } catch (err) {
-    console.warn("[tradelocker/sync] accounts fetch failed (non-fatal):", err);
+    console.warn("[tradelocker/sync] all-accounts fetch failed (non-fatal):", err);
   }
 
   // ── 4. Determine sync window (watermark) ──────────────────────────────────
@@ -196,16 +203,18 @@ export async function POST(req: NextRequest) {
   let inserted = 0;
 
   if (tlAccountId) {
-    const ordersUrl = `${TL_BASE}/trade/accounts/${tlAccountId}/orders`;
-    console.log("[tradelocker/sync] GET", ordersUrl);
+    const ordersUrl = `${TL_BASE}/trade/accounts/${tlAccountId}/ordersHistory`;
+    console.log("[tradelocker/sync] GET", ordersUrl, "accNum:", accNum);
     try {
-      const ordRes  = await fetch(ordersUrl, { headers: authHeader });
+      const ordRes  = await fetch(ordersUrl, {
+        headers: { ...authHeader, accNum },
+      });
       const ordText = await ordRes.text();
-      console.log("[tradelocker/sync] orders:", ordRes.status, ordText.slice(0, 400));
+      console.log("[tradelocker/sync] ordersHistory:", ordRes.status, ordText.slice(0, 400));
 
       if (ordRes.ok) {
         const b      = JSON.parse(ordText);
-        const orders: TLOrder[] = Array.isArray(b) ? b : (b.orders ?? b.data ?? []);
+        const orders: TLOrder[] = Array.isArray(b) ? b : (b.orders ?? b.data ?? b.d?.d ?? b.history ?? []);
 
         const tradeRecords = orders
           .filter(isClosedOrder)
@@ -264,8 +273,9 @@ export async function POST(req: NextRequest) {
     access_token:  accessToken,
     refresh_token: refreshToken,
   };
-  if (balance) updatePayload.balance = balance;
-  if (tlAccountId) updatePayload.account_id = tlAccountId;
+  if (balance)     updatePayload.balance      = balance;
+  if (tlAccountId) updatePayload.account_id   = tlAccountId;
+  if (accNum)      updatePayload.account_num  = accNum;
 
   await supabase
     .from("broker_connections")

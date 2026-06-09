@@ -1,16 +1,27 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServerClient, createServiceClient } from "@/lib/supabase/server";
 
-const TL_BASE = "https://broker-api.tradelocker.com";
+export const maxDuration = 30;
 
 // ── Types ─────────────────────────────────────────────────────────────────
+
+interface TLAccount {
+  id?:            string | number;
+  accountId?:     string | number;
+  accNum?:        string | number;
+  accountNumber?: string | number;
+  login?:         string | number;
+  name?:          string;
+  displayName?:   string;
+  balance?:       number | string;
+}
 
 interface TLOrder {
   id?:           string;
   orderId?:      string;
   symbol?:       string;
   instrument?:   string;
-  side?:         string;   // "buy" | "sell"
+  side?:         string;
   qty?:          number;
   quantity?:     number;
   price?:        number;
@@ -31,11 +42,16 @@ interface TLOrder {
   openTime?:     string;
   closeTime?:    string;
   doneTime?:     string;
-  createdAt?:    string;
   updatedAt?:    string;
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────
+
+function getBase(environment: string): string {
+  return environment === "demo"
+    ? "https://demo.tradelocker.com/backend-api"
+    : "https://live.tradelocker.com/backend-api";
+}
 
 function extractError(rawText: string): string {
   try {
@@ -44,11 +60,6 @@ function extractError(rawText: string): string {
   } catch {
     return rawText;
   }
-}
-
-function isClosedOrder(o: TLOrder): boolean {
-  const s = (o.status ?? o.state ?? "").toLowerCase();
-  return ["filled", "closed", "done", "completed"].some(k => s.includes(k));
 }
 
 function mapOrder(o: TLOrder, userId: string): Record<string, unknown> | null {
@@ -72,10 +83,10 @@ function mapOrder(o: TLOrder, userId: string): Record<string, unknown> | null {
     user_id:       userId,
     symbol,
     direction,
-    entry_price:   o.openPrice   ?? o.entryPrice  ?? o.price       ?? null,
-    exit_price:    o.closePrice  ?? o.exitPrice   ?? o.filledPrice  ?? null,
+    entry_price:   o.openPrice  ?? o.entryPrice  ?? o.price      ?? null,
+    exit_price:    o.closePrice ?? o.exitPrice   ?? o.filledPrice ?? null,
     pnl,
-    volume:        o.qty         ?? o.quantity    ?? null,
+    volume:        o.qty        ?? o.quantity    ?? null,
     closed_at:     closedAt,
     source:        "tradelocker",
     followed_plan: true,
@@ -89,31 +100,34 @@ export async function POST(req: NextRequest) {
   const { data: { user } } = await authClient.auth.getUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const { email, password, server, environment } = await req.json();
+  const { email, password, server, environment = "live" } = await req.json();
   if (!email || !password || !server) {
     return NextResponse.json({ error: "email, password and server are required" }, { status: 400 });
   }
 
-  // ── 1. Authenticate ───────────────────────────────────────────────────────
-  const authUrl = `${TL_BASE}/auth/jwt/token`;
-  console.log("[tradelocker/connect] POST", authUrl, { email, server, environment });
+  const BASE = getBase(environment);
+  console.log("[tradelocker/connect] environment:", environment, "base:", BASE);
+
+  // ── Step 1: POST /auth/jwt/token → accessToken ────────────────────────────
+
+  const tokenUrl = `${BASE}/auth/jwt/token`;
+  console.log("[tradelocker/connect] POST", tokenUrl, { email, server });
 
   let accessToken  = "";
   let refreshToken = "";
+
   try {
-    const authRes = await fetch(authUrl, {
+    const tokenRes = await fetch(tokenUrl, {
       method:  "POST",
       headers: { "Content-Type": "application/json" },
       body:    JSON.stringify({ email, password, server }),
     });
-    const rawText = await authRes.text();
-    console.log("[tradelocker/connect] auth:", authRes.status, rawText.slice(0, 400));
+    const rawText = await tokenRes.text();
+    console.log("[tradelocker/connect] token:", tokenRes.status, rawText.slice(0, 400));
 
-    if (!authRes.ok) {
-      return NextResponse.json(
-        { error: extractError(rawText) || `TradeLocker returned ${authRes.status}` },
-        { status: 401 }
-      );
+    if (!tokenRes.ok) {
+      const msg = extractError(rawText) || `TradeLocker auth returned ${tokenRes.status}`;
+      return NextResponse.json({ error: msg }, { status: 401 });
     }
 
     const parsed = JSON.parse(rawText);
@@ -121,46 +135,67 @@ export async function POST(req: NextRequest) {
     refreshToken = parsed.refreshToken ?? parsed.refresh_token ?? "";
 
     if (!accessToken) {
-      return NextResponse.json({ error: "No access token in response" }, { status: 502 });
+      return NextResponse.json({ error: "No access token returned by TradeLocker" }, { status: 502 });
     }
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    console.error("[tradelocker/connect] auth error:", msg);
-    return NextResponse.json({ error: `Network error: ${msg}` }, { status: 502 });
+    console.error("[tradelocker/connect] token error:", msg);
+    return NextResponse.json({ error: `Network error authenticating: ${msg}` }, { status: 502 });
   }
 
-  // ── 2. Fetch accounts ─────────────────────────────────────────────────────
-  const accountsUrl = `${TL_BASE}/trade/accounts`;
+  // ── Step 2: GET /auth/jwt/all-accounts → accountId + accNum ──────────────
+
+  const accountsUrl = `${BASE}/auth/jwt/all-accounts`;
   console.log("[tradelocker/connect] GET", accountsUrl);
 
-  let tlAccountId   = "";
-  let accountNumber = "";
-  let balance       = "—";
+  let accountId   = "";
+  let accNum      = "";
+  let balance     = "—";
+  let displayName = `TradeLocker · ${server}`;
 
   try {
     const accRes  = await fetch(accountsUrl, {
       headers: { Authorization: `Bearer ${accessToken}` },
     });
     const accText = await accRes.text();
-    console.log("[tradelocker/connect] accounts:", accRes.status, accText.slice(0, 400));
+    console.log("[tradelocker/connect] all-accounts:", accRes.status, accText.slice(0, 600));
 
-    if (accRes.ok) {
-      const body     = JSON.parse(accText);
-      const accounts = Array.isArray(body) ? body : (body.accounts ?? body.data ?? []);
-      const first    = accounts[0];
-      if (first) {
-        tlAccountId   = String(first.id ?? first.accountId ?? "");
-        accountNumber = String(first.accountNumber ?? first.login ?? tlAccountId);
-        if (first.balance != null) {
-          balance = `$${Number(first.balance).toLocaleString("en-US", { minimumFractionDigits: 2 })}`;
-        }
-      }
+    if (!accRes.ok) {
+      const msg = extractError(accText) || `Failed to fetch accounts (${accRes.status})`;
+      return NextResponse.json({ error: msg }, { status: 502 });
     }
+
+    const body = JSON.parse(accText);
+    // TL wraps results in body.d.d in some API versions
+    const accounts: TLAccount[] = Array.isArray(body)
+      ? body
+      : (body.accounts ?? body.d?.d ?? []);
+
+    if (accounts.length === 0) {
+      return NextResponse.json(
+        { error: "No accounts found for this TradeLocker login. Check your server name." },
+        { status: 400 }
+      );
+    }
+
+    const first = accounts[0];
+    accountId   = String(first.id ?? first.accountId ?? "");
+    accNum      = String(first.accNum ?? first.accountNumber ?? first.login ?? accountId);
+    displayName = first.displayName ?? first.name ?? `TradeLocker · ${server}`;
+
+    if (first.balance != null) {
+      balance = `$${Number(first.balance).toLocaleString("en-US", { minimumFractionDigits: 2 })}`;
+    }
+
+    console.log("[tradelocker/connect] accountId:", accountId, "accNum:", accNum, "balance:", balance);
   } catch (err) {
-    console.warn("[tradelocker/connect] accounts fetch failed (non-fatal):", err);
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error("[tradelocker/connect] accounts error:", msg);
+    return NextResponse.json({ error: `Failed to load accounts: ${msg}` }, { status: 502 });
   }
 
-  // ── 3. Persist connection ─────────────────────────────────────────────────
+  // ── Persist connection ────────────────────────────────────────────────────
+
   const supabase = createServiceClient();
   const { data: connRow, error: connErr } = await supabase
     .from("broker_connections")
@@ -168,15 +203,17 @@ export async function POST(req: NextRequest) {
       {
         user_id:       user.id,
         broker:        "tradelocker",
-        display_name:  `TradeLocker · ${accountNumber || server}`,
-        account_id:    tlAccountId || accountNumber,
+        display_name:  displayName,
+        account_id:    accountId,
+        account_num:   accNum,
         balance,
         server,
-        environment:   environment ?? "live",
+        environment,
         access_token:  accessToken,
         refresh_token: refreshToken,
         status:        "connected",
         last_sync:     new Date().toISOString(),
+        trades_count:  0,
       },
       { onConflict: "user_id,broker,server" }
     )
@@ -184,31 +221,36 @@ export async function POST(req: NextRequest) {
     .single();
 
   if (connErr) {
-    console.error("[tradelocker/connect] supabase upsert error:", connErr);
+    console.error("[tradelocker/connect] db upsert error:", connErr.message);
     return NextResponse.json({ error: connErr.message }, { status: 500 });
   }
 
-  // ── 4. Import last 90 days of orders as trades ────────────────────────────
-  if (tlAccountId) {
-    const ordersUrl = `${TL_BASE}/trade/accounts/${tlAccountId}/orders`;
-    console.log("[tradelocker/connect] GET", ordersUrl);
-    try {
-      const ordRes  = await fetch(ordersUrl, {
-        headers: { Authorization: `Bearer ${accessToken}` },
-      });
-      const ordText = await ordRes.text();
-      console.log("[tradelocker/connect] orders:", ordRes.status, ordText.slice(0, 400));
+  // ── Step 3: GET /trade/accounts/{accountId}/ordersHistory ─────────────────
 
-      if (ordRes.ok) {
-        const body   = JSON.parse(ordText);
-        const orders: TLOrder[] = Array.isArray(body)
+  if (accountId) {
+    const historyUrl = `${BASE}/trade/accounts/${accountId}/ordersHistory`;
+    console.log("[tradelocker/connect] GET", historyUrl, "accNum:", accNum);
+
+    try {
+      const histRes  = await fetch(historyUrl, {
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          accNum:        accNum,
+        },
+      });
+      const histText = await histRes.text();
+      console.log("[tradelocker/connect] ordersHistory:", histRes.status, histText.slice(0, 600));
+
+      if (histRes.ok) {
+        const body = JSON.parse(histText);
+        // TL may wrap in body.d.d
+        const raw: TLOrder[] = Array.isArray(body)
           ? body
-          : (body.orders ?? body.data ?? []);
+          : (body.orders ?? body.data ?? body.d?.d ?? body.history ?? []);
 
         const since = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000);
 
-        const tradeRecords = orders
-          .filter(isClosedOrder)
+        const tradeRecords = raw
           .filter(o => {
             const t = o.closedAt ?? o.closeTime ?? o.doneTime;
             return t ? new Date(t) >= since : false;
@@ -216,10 +258,9 @@ export async function POST(req: NextRequest) {
           .map(o => mapOrder(o, user.id))
           .filter((r): r is Record<string, unknown> => r !== null);
 
-        console.log("[tradelocker/connect] mapping", tradeRecords.length, "closed trades");
+        console.log("[tradelocker/connect] importing", tradeRecords.length, "trades from last 90 days");
 
         if (tradeRecords.length > 0) {
-          // Full re-import on initial connect — wipe unannotated trades and re-insert
           await supabase
             .from("trades")
             .delete()
@@ -230,17 +271,20 @@ export async function POST(req: NextRequest) {
             .is("grade", null);
 
           const { error: insertErr } = await supabase.from("trades").insert(tradeRecords);
-          if (insertErr) console.error("[tradelocker/connect] insert error:", insertErr.message);
-          else {
+          if (insertErr) {
+            console.error("[tradelocker/connect] insert error:", insertErr.message);
+          } else {
             await supabase
               .from("broker_connections")
               .update({ trades_count: tradeRecords.length })
               .eq("id", connRow.id);
           }
         }
+      } else {
+        console.warn("[tradelocker/connect] ordersHistory failed:", extractError(histText));
       }
     } catch (err) {
-      console.warn("[tradelocker/connect] orders import failed (non-fatal):", err);
+      console.warn("[tradelocker/connect] ordersHistory error (non-fatal):", err);
     }
   }
 
