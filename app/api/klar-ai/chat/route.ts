@@ -1,21 +1,25 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServerClient, createServiceClient } from "@/lib/supabase/server";
-import Anthropic from "@anthropic-ai/sdk";
+import Groq from "groq-sdk";
 
 export const dynamic = "force-dynamic";
 
-let anthropic: Anthropic | null = null;
-function getAnthropic() {
-  if (!anthropic) anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
-  return anthropic;
+let groq: Groq | null = null;
+function getGroq() {
+  if (!groq) groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
+  return groq;
 }
+
+const MODEL = "llama-3.3-70b-versatile";
+
+const BASE_SYSTEM = `You are KlarAI, an elite trading psychology coach and performance analyst for KlarTrade. You help traders improve discipline, manage emotions, analyze their trading patterns, and build better trading habits. You have access to the user's trading context. Be direct, specific, and actionable. Reference trading concepts naturally. Never give financial advice.`;
 
 export async function POST(req: NextRequest) {
   const authClient = await createServerClient();
   const { data: { user } } = await authClient.auth.getUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  if (!process.env.ANTHROPIC_API_KEY) {
+  if (!process.env.GROQ_API_KEY) {
     return NextResponse.json({ error: "KlarAI is not configured yet" }, { status: 503 });
   }
 
@@ -25,22 +29,21 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Messages required" }, { status: 400 });
   }
 
-  // Support / lightweight callers can pass a custom system prompt, skipping trader data.
+  const apiMessages = messages.map((m: { role: string; content: string }) => ({
+    role: m.role as "user" | "assistant",
+    content: m.content,
+  }));
+
+  // Lightweight callers can pass a custom system prompt, skipping trader data
   if (systemOverride) {
-    const apiMessages = messages.map((m: { role: string; content: string }) => ({
-      role: m.role as "user" | "assistant",
-      content: m.content,
-    }));
     try {
-      const response = await getAnthropic().messages.create({
-        model: "claude-haiku-4-5-20251001",
+      const response = await getGroq().chat.completions.create({
+        model: MODEL,
         max_tokens: 1024,
-        system: systemOverride,
-        messages: apiMessages,
+        messages: [{ role: "system", content: systemOverride }, ...apiMessages],
       });
-      const content = response.content[0];
-      if (content.type !== "text") return NextResponse.json({ error: "Unexpected response type" }, { status: 500 });
-      return NextResponse.json({ content: content.text });
+      const text = response.choices[0]?.message?.content ?? "";
+      return NextResponse.json({ content: text });
     } catch (err) {
       const message = err instanceof Error ? err.message : "Failed to get AI response";
       return NextResponse.json({ error: message }, { status: 500 });
@@ -102,7 +105,7 @@ export async function POST(req: NextRequest) {
     .map((p) => `  - ${p.name}: ${p.description ?? ""}`)
     .join("\n") || "  - No active plans defined yet";
 
-  const systemPrompt = `You are KlarAI, an expert trading coach and analyst built into KlarTrade. You are direct, evidence-based, and focused on helping traders improve through data, psychology, and process — not predictions.
+  const systemPrompt = `${BASE_SYSTEM}
 
 TRADER DATA (last 30 days):
 - Trades taken: ${totalTrades}
@@ -126,25 +129,15 @@ RULES:
 - Focus on process, psychology, and pattern recognition
 - If asked something unrelated to trading, briefly redirect to the trading context`;
 
-  const apiMessages = messages.map((m: { role: string; content: string }) => ({
-    role: m.role as "user" | "assistant",
-    content: m.content,
-  }));
-
   try {
-    const response = await getAnthropic().messages.create({
-      model: "claude-haiku-4-5-20251001",
+    const response = await getGroq().chat.completions.create({
+      model: MODEL,
       max_tokens: 1024,
-      system: systemPrompt,
-      messages: apiMessages,
+      messages: [{ role: "system", content: systemPrompt }, ...apiMessages],
     });
 
-    const content = response.content[0];
-    if (content.type !== "text") {
-      return NextResponse.json({ error: "Unexpected response type" }, { status: 500 });
-    }
-
-    return NextResponse.json({ content: content.text });
+    const text = response.choices[0]?.message?.content ?? "";
+    return NextResponse.json({ content: text });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Failed to get AI response";
     return NextResponse.json({ error: message }, { status: 500 });
