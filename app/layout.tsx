@@ -15,33 +15,38 @@ const plusJakarta = Plus_Jakarta_Sans({
 });
 
 const BASE_URL = "https://klartrade.com";
+const OG_TITLE = "KlarTrade — Trade with Clarity, Not Emotion";
+const OG_DESCRIPTION =
+  "The AI-powered trading journal that builds discipline, tracks your edge, and protects your mental game.";
+const OG_IMAGE = `${BASE_URL}/og-image.png`;
 
 export const metadata: Metadata = {
   metadataBase: new URL(BASE_URL),
-  title: "KlarTrade — Trade with Clarity, Not Emotion",
-  description:
-    "The AI-powered trading platform that builds unbreakable discipline, manages risk intelligently, and reviews your psychology — so every decision is driven by your edge, not your fear.",
-  keywords: ["trading", "AI", "discipline", "risk management", "trading journal", "psychology"],
+  title: OG_TITLE,
+  description: OG_DESCRIPTION,
+  keywords: [
+    "trading journal",
+    "prop firm",
+    "trading discipline",
+    "trading analytics",
+    "forex journal",
+  ],
+  robots: { index: true, follow: true },
+  alternates: { canonical: BASE_URL },
   openGraph: {
-    title: "KlarTrade — Trade with Clarity, Not Emotion",
-    description: "Trade with Clarity. Execute with Discipline. AI-powered trading intelligence for serious traders.",
+    title: OG_TITLE,
+    description: OG_DESCRIPTION,
     url: BASE_URL,
     siteName: "KlarTrade",
     type: "website",
-    images: [
-      {
-        url: "/og-image.png",
-        width: 1200,
-        height: 630,
-        alt: "KlarTrade — Trade with Clarity, Not Emotion",
-      },
-    ],
+    images: [{ url: OG_IMAGE, width: 1200, height: 630, alt: OG_TITLE }],
   },
   twitter: {
     card: "summary_large_image",
-    title: "KlarTrade — Trade with Clarity, Not Emotion",
-    description: "Trade with Clarity. Execute with Discipline. AI-powered trading intelligence for serious traders.",
-    images: ["/og-image.png"],
+    title: OG_TITLE,
+    description: OG_DESCRIPTION,
+    site: "@klartrade",
+    images: [OG_IMAGE],
   },
 };
 
