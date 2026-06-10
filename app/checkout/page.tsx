@@ -111,7 +111,6 @@ const plans = [
 export default function CheckoutPage() {
   const [selecting, setSelecting] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [email, setEmail] = useState("");
   const [isLoggedIn, setIsLoggedIn] = useState<boolean | null>(null);
 
   useEffect(() => {
@@ -121,9 +120,9 @@ export default function CheckoutPage() {
   }, []);
 
   async function handleSelect(planId: string) {
-    // Require email from unauthenticated users before sending them to Stripe
-    if (isLoggedIn === false && !email.trim()) {
-      setError("Please enter your email address to continue.");
+    // Not logged in → send to register first
+    if (isLoggedIn === false) {
+      window.location.href = "/register";
       return;
     }
     setSelecting(planId);
@@ -132,7 +131,7 @@ export default function CheckoutPage() {
       const res = await fetch("/api/stripe/checkout", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ plan: planId, email: email.trim() || undefined }),
+        body: JSON.stringify({ plan: planId }),
       });
       const data = await res.json();
       if (!res.ok) {
@@ -241,23 +240,23 @@ export default function CheckoutPage() {
             </p>
           </div>
 
-          {/* Email input for unauthenticated users */}
+          {/* Unauthenticated users — prompt to register first */}
           {isLoggedIn === false && (
-            <div className="mb-8 max-w-md mx-auto">
-              <label className="block text-xs font-medium text-[#6B7280] mb-2">
-                Your email address
-              </label>
-              <input
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="you@example.com"
-                className="w-full bg-white/[0.04] border border-white/[0.08] rounded-xl px-4 py-3 text-sm text-[#F2F0EB] placeholder-[#6B7280] focus:outline-none focus:border-[#03588C]/60 transition-all"
-              />
-              <p className="text-[11px] text-[#6B7280] mt-2">
+            <div className="mb-8 max-w-md mx-auto glass rounded-2xl p-6 text-center border border-white/[0.08]">
+              <p className="text-sm font-medium text-[#F2F0EB] mb-1">Create your account first</p>
+              <p className="text-xs text-[#6B7280] mb-4">
+                Takes 30 seconds. Then you&apos;ll complete checkout.
+              </p>
+              <Link
+                href="/register"
+                className="inline-flex items-center justify-center gap-2 bg-[#03588C] hover:bg-[#4BA3D4] text-white text-sm font-semibold px-6 py-2.5 rounded-xl transition-all"
+              >
+                Create Account — Free
+              </Link>
+              <p className="text-[11px] text-[#6B7280] mt-3">
                 Already have an account?{" "}
                 <Link href="/login" className="text-[#4BA3D4] hover:text-[#F2F0EB] transition-colors">
-                  Sign in first
+                  Sign in
                 </Link>
               </p>
             </div>

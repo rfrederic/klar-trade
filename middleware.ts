@@ -30,26 +30,29 @@ export async function middleware(request: NextRequest) {
 
   const { pathname } = request.nextUrl;
 
-  // Redirect unauthenticated users away from dashboard
-  const isDashboard = pathname.startsWith("/dashboard") ||
-    pathname.startsWith("/trading") ||
-    pathname.startsWith("/journal") ||
-    pathname.startsWith("/analytics") ||
-    pathname.startsWith("/brokers") ||
-    pathname.startsWith("/edge") ||
-    pathname.startsWith("/klar-ai") ||
-    pathname.startsWith("/community") ||
-    pathname.startsWith("/notebook") ||
-    pathname.startsWith("/refuge") ||
-    pathname.startsWith("/settings") ||
-    pathname.startsWith("/risk") ||
-    pathname.startsWith("/strategies") ||
-    pathname.startsWith("/replay") ||
-    pathname.startsWith("/calendar") ||
+  // ── Protected dashboard routes ──────────────────────────────────────────────
+  const isDashboard =
+    pathname.startsWith("/dashboard")     ||
+    pathname.startsWith("/trading")       ||
+    pathname.startsWith("/journal")       ||
+    pathname.startsWith("/analytics")     ||
+    pathname.startsWith("/brokers")       ||
+    pathname.startsWith("/edge")          ||
+    pathname.startsWith("/klar-ai")       ||
+    pathname.startsWith("/community")     ||
+    pathname.startsWith("/notebook")      ||
+    pathname.startsWith("/refuge")        ||
+    pathname.startsWith("/settings")      ||
+    pathname.startsWith("/risk")          ||
+    pathname.startsWith("/strategies")    ||
+    pathname.startsWith("/replay")        ||
+    pathname.startsWith("/calendar")      ||
     pathname.startsWith("/trading-plans") ||
-    pathname.startsWith("/ai-coach") ||
+    pathname.startsWith("/ai-coach")      ||
+    pathname.startsWith("/achievements")  ||
     pathname.startsWith("/notes");
 
+  // 1. Unauthenticated on a dashboard route → /login
   if (isDashboard && !user) {
     const loginUrl = request.nextUrl.clone();
     loginUrl.pathname = "/login";
@@ -57,7 +60,7 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(loginUrl);
   }
 
-  // Plan gate — only allow dashboard access for paying users and admins
+  // 2. Authenticated on a dashboard route → check paid plan
   if (isDashboard && user) {
     const { data: profile } = await supabase
       .from("profiles")
@@ -68,24 +71,26 @@ export async function middleware(request: NextRequest) {
     const plan = profile?.plan ?? null;
     const hasPaidAccess =
       profile?.is_admin ||
-      plan === "starter" ||
-      plan === "pro" ||
-      plan === "elite" ||
+      plan === "starter"  ||
+      plan === "pro"      ||
+      plan === "elite"    ||
       (plan === "trial" && !!profile?.stripe_customer_id);
 
     if (!hasPaidAccess) {
-      const url = request.nextUrl.clone();
-      url.pathname = "/checkout";
-      return NextResponse.redirect(url);
+      const checkoutUrl = request.nextUrl.clone();
+      checkoutUrl.pathname = "/checkout";
+      return NextResponse.redirect(checkoutUrl);
     }
   }
 
-  // Redirect logged-in users away from auth pages
-  const isAuth = pathname.startsWith("/login") ||
-    pathname.startsWith("/register") ||
+  // 3. Authenticated users on login/forgot-password → redirect away
+  //    (NOT /register — new users land there after landing-page CTA and
+  //     must be able to see it even while their session is being created)
+  const isLoginPage =
+    pathname.startsWith("/login") ||
     pathname.startsWith("/forgot-password");
 
-  if (isAuth && user) {
+  if (isLoginPage && user) {
     const dashboardUrl = request.nextUrl.clone();
     dashboardUrl.pathname = "/dashboard";
     return NextResponse.redirect(dashboardUrl);

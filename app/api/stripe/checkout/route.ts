@@ -19,46 +19,38 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Stripe is not configured" }, { status: 503 });
     }
 
-    const { plan, email } = await req.json();
+    // Require authentication — guests must register first
+    const authClient = await createServerClient();
+    const { data: { user } } = await authClient.auth.getUser();
+    if (!user) {
+      return NextResponse.json({ error: "Please create an account before checking out." }, { status: 401 });
+    }
 
+    const { plan } = await req.json();
     const entry = PLAN_PRICE_MAP[plan as string];
-    console.log("[stripe/checkout] plan:", plan, "priceId:", entry?.priceId ?? "(missing)");
+    console.log("[stripe/checkout] userId:", user.id, "plan:", plan, "priceId:", entry?.priceId ?? "(missing)");
 
     if (!entry?.priceId) {
       return NextResponse.json({ error: "Invalid or unconfigured plan" }, { status: 400 });
     }
 
-    // Try to get the logged-in user — not required
-    let user = null;
-    try {
-      const authClient = await createServerClient();
-      const { data } = await authClient.auth.getUser();
-      user = data.user;
-    } catch {
-      // Not logged in — continue as guest
-    }
-
-    const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
-    const origin = req.nextUrl.origin;
-    const customerEmail = user?.email ?? (email as string | undefined) ?? undefined;
-
-    // Logged-in users go to dashboard; guests go to register to create their account
-    const successUrl = user
-      ? `${origin}/dashboard?success=true`
-      : `${origin}/register?session_id={CHECKOUT_SESSION_ID}`;
+    const stripe  = new Stripe(process.env.STRIPE_SECRET_KEY);
+    const origin  = req.nextUrl.origin;
 
     const session = await stripe.checkout.sessions.create({
-      mode: entry.mode,
+      mode:       entry.mode,
       line_items: [{ price: entry.priceId, quantity: 1 }],
-      success_url: successUrl,
-      cancel_url: `${origin}/checkout`,
-      ...(customerEmail ? { customer_email: customerEmail } : {}),
+      // success_url hits our verify route which updates the profile synchronously
+      // before redirecting to /dashboard — avoids webhook race condition
+      success_url: `${origin}/api/stripe/success?session_id={CHECKOUT_SESSION_ID}`,
+      cancel_url:  `${origin}/checkout`,
+      customer_email:       user.email ?? undefined,
+      client_reference_id:  user.id,
       metadata: {
         plan,
-        ...(user?.id ? { userId: user.id } : {}),
-        ...(customerEmail ? { email: customerEmail } : {}),
+        userId: user.id,
+        email:  user.email ?? "",
       },
-      ...(user?.id ? { client_reference_id: user.id } : {}),
     });
 
     return NextResponse.json({ url: session.url });
