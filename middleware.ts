@@ -77,9 +77,9 @@ export async function middleware(request: NextRequest) {
       (plan === "trial" && !!profile?.stripe_customer_id);
 
     if (!hasPaidAccess) {
-      const checkoutUrl = request.nextUrl.clone();
-      checkoutUrl.pathname = "/checkout";
-      return NextResponse.redirect(checkoutUrl);
+      const plansUrl = request.nextUrl.clone();
+      plansUrl.pathname = "/plans";
+      return NextResponse.redirect(plansUrl);
     }
   }
 
