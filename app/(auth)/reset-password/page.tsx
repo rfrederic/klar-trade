@@ -1,43 +1,54 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { createClientComponentClient } from "@supabase/auth-helpers-nextjs";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import Image from "next/image";
 import { Eye, EyeOff, ArrowRight, Check } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { createClient } from "@/lib/supabase/client";
 
-export default function ResetPasswordPage() {
-  const router = useRouter();
+export default function ResetPassword() {
   const [password, setPassword] = useState("");
-  const [confirm, setConfirm] = useState("");
-  const [showPw, setShowPw] = useState(false);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [done, setDone] = useState(false);
+  const [confirm, setConfirm]   = useState("");
+  const [message, setMessage]   = useState("");
+  const [ready, setReady]       = useState(false);
+  const [showPw, setShowPw]     = useState(false);
+  const [loading, setLoading]   = useState(false);
+  const supabase = createClientComponentClient();
+  const router   = useRouter();
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  useEffect(() => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
+      if (event === "PASSWORD_RECOVERY") {
+        setReady(true);
+      }
+    });
+    return () => subscription.unsubscribe();
+  }, []);
+
+  const handleReset = async () => {
+    if (!ready) {
+      setMessage("Auth session missing. Please use the link from your email.");
+      return;
+    }
     if (password !== confirm) {
-      setError("Passwords do not match");
+      setMessage("Passwords do not match.");
       return;
     }
     setLoading(true);
-    setError(null);
-
-    const supabase = createClient();
-    const { error: err } = await supabase.auth.updateUser({ password });
-
+    setMessage("");
+    const { error } = await supabase.auth.updateUser({ password });
     setLoading(false);
-    if (err) {
-      setError(err.message);
-      return;
+    if (error) {
+      setMessage(error.message);
+    } else {
+      setMessage("Password updated! Redirecting...");
+      setTimeout(() => router.push("/login"), 2000);
     }
-
-    setDone(true);
-    setTimeout(() => router.push("/dashboard"), 2000);
   };
+
+  const done = message === "Password updated! Redirecting...";
 
   return (
     <div className="min-h-screen bg-[#050508] flex items-center justify-center px-4 relative overflow-hidden">
@@ -66,7 +77,7 @@ export default function ResetPasswordPage() {
                 <Check className="w-7 h-7 text-[#22C55E]" strokeWidth={2.5} />
               </div>
               <h2 className="text-xl font-bold text-[#F2F0EB] mb-2">Password updated</h2>
-              <p className="text-sm text-[#6B7280]">Redirecting you to the dashboard...</p>
+              <p className="text-sm text-[#6B7280]">Redirecting you to login...</p>
             </div>
           ) : (
             <>
@@ -75,7 +86,7 @@ export default function ResetPasswordPage() {
                 <p className="text-sm text-[#6B7280]">Choose a strong password for your account.</p>
               </div>
 
-              <form onSubmit={handleSubmit} className="space-y-4">
+              <div className="space-y-4">
                 <div>
                   <label className="block text-xs font-medium text-[#6B7280] mb-1.5">New password</label>
                   <div className="relative">
@@ -84,8 +95,6 @@ export default function ResetPasswordPage() {
                       value={password}
                       onChange={(e) => setPassword(e.target.value)}
                       placeholder="Create a strong password"
-                      required
-                      minLength={8}
                       className="w-full bg-white/[0.04] border border-white/[0.08] rounded-xl px-4 py-3 pr-11 text-sm text-[#F2F0EB] placeholder-[#6B7280] focus:outline-none focus:border-[#03588C]/60 transition-all"
                     />
                     <button type="button" onClick={() => setShowPw(!showPw)} className="absolute right-3 top-1/2 -translate-y-1/2 text-[#6B7280] hover:text-[#F2F0EB] transition-colors">
@@ -101,16 +110,19 @@ export default function ResetPasswordPage() {
                     value={confirm}
                     onChange={(e) => setConfirm(e.target.value)}
                     placeholder="Repeat your password"
-                    required
                     className="w-full bg-white/[0.04] border border-white/[0.08] rounded-xl px-4 py-3 text-sm text-[#F2F0EB] placeholder-[#6B7280] focus:outline-none focus:border-[#03588C]/60 transition-all"
                   />
                 </div>
 
-                {error && (
-                  <p className="text-xs text-red-400 bg-red-500/10 border border-red-500/20 rounded-xl px-3 py-2">{error}</p>
+                {message && !done && (
+                  <p className="text-xs text-red-400 bg-red-500/10 border border-red-500/20 rounded-xl px-3 py-2">{message}</p>
                 )}
 
-                <Button type="submit" className="w-full h-11" disabled={loading || !password || !confirm}>
+                <Button
+                  onClick={handleReset}
+                  className="w-full h-11"
+                  disabled={loading || !password || !confirm}
+                >
                   {loading ? (
                     <span className="flex items-center gap-2">
                       <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
@@ -122,7 +134,7 @@ export default function ResetPasswordPage() {
                     </span>
                   )}
                 </Button>
-              </form>
+              </div>
             </>
           )}
         </div>

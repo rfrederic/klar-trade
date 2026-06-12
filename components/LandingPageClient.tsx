@@ -98,6 +98,18 @@ const pricing = [
 export default function LandingPage() {
   const [billing, setBilling] = useState<"monthly" | "yearly">("monthly");
   const [navOpen, setNavOpen] = useState(false);
+  const [isLoggedIn, setIsLoggedIn] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    fetch("/api/auth/me")
+      .then((r) => setIsLoggedIn(r.ok))
+      .catch(() => setIsLoggedIn(false));
+  }, []);
+
+  async function handleLogout() {
+    await fetch("/api/auth/logout", { method: "POST" });
+    window.location.href = "/";
+  }
 
   const traders = useCountUp(12400);
   const trades = useCountUp(2100000);
@@ -130,8 +142,17 @@ export default function LandingPage() {
           </div>
 
           <div className="hidden md:flex items-center gap-3">
-            <Link href="/login" className="text-sm text-[#6B7280] hover:text-[#F2F0EB] px-3 py-2 transition-colors">Login</Link>
-            <Link href="/register" className="bg-[#03588C] text-white text-sm px-4 py-2 rounded-xl hover:bg-[#024a77] transition-all shadow-glow-xs">Start 10-Day Trial — $10</Link>
+            {isLoggedIn ? (
+              <>
+                <Link href="/dashboard" className="text-sm text-[#6B7280] hover:text-[#F2F0EB] px-3 py-2 transition-colors">Dashboard</Link>
+                <button onClick={handleLogout} className="text-sm text-[#6B7280] hover:text-[#F2F0EB] px-3 py-2 transition-colors">Log out</button>
+              </>
+            ) : (
+              <>
+                <Link href="/login" className="text-sm text-[#6B7280] hover:text-[#F2F0EB] px-3 py-2 transition-colors">Login</Link>
+                <Link href="/register" className="bg-[#03588C] text-white text-sm px-4 py-2 rounded-xl hover:bg-[#024a77] transition-all shadow-glow-xs">Start 10-Day Trial — $10</Link>
+              </>
+            )}
           </div>
 
           <button className="md:hidden text-[#6B7280]" onClick={() => setNavOpen(!navOpen)}>
@@ -150,8 +171,17 @@ export default function LandingPage() {
               {["Features", "Pricing", "Brokers"].map((l) => (
                 <a key={l} href={`#${l.toLowerCase()}`} className="text-sm text-[#6B7280]" onClick={() => setNavOpen(false)}>{l}</a>
               ))}
-              <Link href="/login" className="text-sm text-[#6B7280]">Login</Link>
-              <Link href="/register" className="bg-[#03588C] text-white text-sm px-4 py-2 rounded-xl text-center">Start 10-Day Trial — $10</Link>
+              {isLoggedIn ? (
+                <>
+                  <Link href="/dashboard" className="text-sm text-[#6B7280]" onClick={() => setNavOpen(false)}>Dashboard</Link>
+                  <button onClick={handleLogout} className="text-sm text-[#6B7280] text-left">Log out</button>
+                </>
+              ) : (
+                <>
+                  <Link href="/login" className="text-sm text-[#6B7280]" onClick={() => setNavOpen(false)}>Login</Link>
+                  <Link href="/register" className="bg-[#03588C] text-white text-sm px-4 py-2 rounded-xl text-center" onClick={() => setNavOpen(false)}>Start 10-Day Trial — $10</Link>
+                </>
+              )}
             </motion.div>
           )}
         </AnimatePresence>

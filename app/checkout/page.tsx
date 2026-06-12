@@ -119,6 +119,11 @@ export default function CheckoutPage() {
       .catch(() => setIsLoggedIn(false));
   }, []);
 
+  async function handleLogout() {
+    await fetch("/api/auth/logout", { method: "POST" });
+    window.location.href = "/";
+  }
+
   async function handleSelect(planId: string) {
     // Not logged in → send to register first
     if (isLoggedIn === false) {
@@ -155,7 +160,8 @@ export default function CheckoutPage() {
       </div>
 
       {/* ── Header ───────────────────────────────────────────── */}
-      <header className="relative z-10 px-6 py-5 flex items-center justify-center border-b border-white/[0.05]">
+      <header className="relative z-10 px-6 py-5 flex items-center justify-between border-b border-white/[0.05]">
+        <div className="w-24" />
         <Link href="/" className="flex items-center gap-2.5">
           <div className="w-8 h-8 flex items-center justify-center">
             <Image
@@ -170,6 +176,16 @@ export default function CheckoutPage() {
             Klar<span className="text-[#4BA3D4]">Trade</span>
           </span>
         </Link>
+        <div className="w-24 flex justify-end">
+          {isLoggedIn && (
+            <button
+              onClick={handleLogout}
+              className="text-sm text-[#6B7280] hover:text-[#F2F0EB] transition-colors"
+            >
+              Log out
+            </button>
+          )}
+        </div>
       </header>
 
       <main className="relative z-10">
