@@ -149,7 +149,8 @@ export default function LandingPage() {
               </>
             ) : (
               <>
-                <Link href="/login" className="text-sm text-[#6B7280] hover:text-[#F2F0EB] px-3 py-2 transition-colors">Login</Link>
+                <Link href="/login" className="text-sm text-[#6B7280] hover:text-[#F2F0EB] px-3 py-2 transition-colors">Sign In</Link>
+                <Link href="/register" className="text-sm text-[#6B7280] hover:text-[#F2F0EB] px-3 py-2 transition-colors">Register</Link>
                 <Link href="/register" className="bg-[#03588C] text-white text-sm px-4 py-2 rounded-xl hover:bg-[#024a77] transition-all shadow-glow-xs">Start 10-Day Trial — $10</Link>
               </>
             )}
@@ -178,7 +179,8 @@ export default function LandingPage() {
                 </>
               ) : (
                 <>
-                  <Link href="/login" className="text-sm text-[#6B7280]" onClick={() => setNavOpen(false)}>Login</Link>
+                  <Link href="/login" className="text-sm text-[#6B7280]" onClick={() => setNavOpen(false)}>Sign In</Link>
+                  <Link href="/register" className="text-sm text-[#6B7280]" onClick={() => setNavOpen(false)}>Register</Link>
                   <Link href="/register" className="bg-[#03588C] text-white text-sm px-4 py-2 rounded-xl text-center" onClick={() => setNavOpen(false)}>Start 10-Day Trial — $10</Link>
                 </>
               )}

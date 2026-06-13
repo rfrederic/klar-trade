@@ -70,7 +70,7 @@ export default function RegisterPage() {
     }
 
     setSuccess(true);
-    setTimeout(() => router.push("/plans"), 1500);
+    setTimeout(() => router.push("/checkout"), 1500);
   };
 
   return (
@@ -106,9 +106,9 @@ export default function RegisterPage() {
                   <Check className="w-7 h-7 text-[#22C55E]" strokeWidth={2.5} />
                 </div>
                 <h2 className="text-xl font-bold text-[#F2F0EB] mb-2">Account created!</h2>
-                <p className="text-sm text-[#6B7280] mb-6">Taking you to plans…</p>
-                <Link href="/plans">
-                  <Button className="w-full">Choose a Plan <ArrowRight className="w-4 h-4" /></Button>
+                <p className="text-sm text-[#6B7280] mb-6">Taking you to checkout…</p>
+                <Link href="/checkout">
+                  <Button className="w-full">Complete Checkout <ArrowRight className="w-4 h-4" /></Button>
                 </Link>
               </motion.div>
             ) : (

@@ -1,27 +1,45 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { createClientComponentClient } from "@supabase/auth-helpers-nextjs";
-import { useRouter } from "next/navigation";
+import { createClient } from "@/lib/supabase/client";
+import { useRouter, useSearchParams } from "next/navigation";
 import { motion } from "framer-motion";
 import Image from "next/image";
-import { Eye, EyeOff, ArrowRight, Check } from "lucide-react";
+import { Eye, EyeOff, ArrowRight, Check, ArrowLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import Link from "next/link";
 
 export default function ResetPassword() {
   const [password, setPassword] = useState("");
   const [confirm, setConfirm]   = useState("");
   const [message, setMessage]   = useState("");
   const [ready, setReady]       = useState(false);
+  const [checking, setChecking] = useState(true);
   const [showPw, setShowPw]     = useState(false);
   const [loading, setLoading]   = useState(false);
-  const supabase = createClientComponentClient();
-  const router   = useRouter();
+  const supabase     = createClient();
+  const router       = useRouter();
+  const searchParams = useSearchParams();
 
   useEffect(() => {
+    // If the auth callback couldn't exchange the code, show the error immediately.
+    if (searchParams.get("error")) {
+      setChecking(false);
+      return;
+    }
+
+    // Check for an existing session immediately — handles the race where
+    // PASSWORD_RECOVERY fires before the subscription below is registered,
+    // and also the normal PKCE case where the callback already set cookies.
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session) setReady(true);
+      setChecking(false);
+    });
+
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
       if (event === "PASSWORD_RECOVERY") {
         setReady(true);
+        setChecking(false);
       }
     });
     return () => subscription.unsubscribe();
@@ -29,7 +47,7 @@ export default function ResetPassword() {
 
   const handleReset = async () => {
     if (!ready) {
-      setMessage("Auth session missing. Please use the link from your email.");
+      setMessage("Invalid or expired reset link. Please request a new one.");
       return;
     }
     if (password !== confirm) {
@@ -79,6 +97,16 @@ export default function ResetPassword() {
               <h2 className="text-xl font-bold text-[#F2F0EB] mb-2">Password updated</h2>
               <p className="text-sm text-[#6B7280]">Redirecting you to login...</p>
             </div>
+          ) : !checking && !ready ? (
+            <div className="text-center py-4">
+              <h2 className="text-xl font-bold text-[#F2F0EB] mb-2">Link expired</h2>
+              <p className="text-sm text-[#6B7280] mb-6">This reset link is invalid or has already been used. Request a new one.</p>
+              <Link href="/forgot-password">
+                <Button className="w-full h-11">
+                  <span className="flex items-center gap-2"><ArrowLeft className="w-4 h-4" /> Request new link</span>
+                </Button>
+              </Link>
+            </div>
           ) : (
             <>
               <div className="mb-6">
@@ -121,7 +149,7 @@ export default function ResetPassword() {
                 <Button
                   onClick={handleReset}
                   className="w-full h-11"
-                  disabled={loading || !password || !confirm}
+                  disabled={loading || checking || !password || !confirm}
                 >
                   {loading ? (
                     <span className="flex items-center gap-2">

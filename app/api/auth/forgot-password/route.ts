@@ -26,7 +26,7 @@ export async function POST(req: NextRequest) {
   );
 
   const { error } = await supabase.auth.resetPasswordForEmail(email, {
-    redirectTo: "https://klartrade.com/reset-password",
+    redirectTo: `${req.nextUrl.origin}/auth/callback?next=/reset-password`,
   });
 
   if (error) {
