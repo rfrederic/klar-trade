@@ -43,6 +43,88 @@ function num(s: string | undefined): number | null {
   return isNaN(n) ? null : n;
 }
 
+// ── MT5 Deal History Parser ───────────────────────────────────────────────────
+// Handles MetaTrader 5 "Deal" export where each position has separate In/Out rows.
+// Detected when headers contain: Deal, Action, Entry.
+
+function parseMT5Deals(text: string): ParsedTrade[] {
+  const sep   = text.includes("\t") ? "\t" : ",";
+  const lines = text.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+  if (lines.length < 2) return [];
+
+  let hdrIdx = 0;
+  for (let i = 0; i < Math.min(5, lines.length); i++) {
+    const lower = lines[i].toLowerCase();
+    if (/\bdeal\b/.test(lower) && /\baction\b/.test(lower) && /\bentry\b/.test(lower)) {
+      hdrIdx = i; break;
+    }
+  }
+
+  const headers = lines[hdrIdx].split(sep).map(h => h.replace(/^"|"$/g, "").toLowerCase().trim());
+  const col = (name: string) => headers.indexOf(name.toLowerCase());
+
+  const posC   = col("position");
+  const entryC = col("entry");   // "In" / "Out" status column
+
+  type RowMap = Record<string, string>;
+  const byPosition = new Map<string, { in?: RowMap; out?: RowMap }>();
+
+  for (let i = hdrIdx + 1; i < lines.length; i++) {
+    const cols  = lines[i].split(sep).map(v => v.replace(/^"|"$/g, "").trim());
+    if (cols.length < 3) continue;
+    const entry = cols[entryC]?.trim();
+    const posId = cols[posC]?.trim();
+    if (!posId || posId === "0" || !entry) continue;
+    if (entry !== "In" && entry !== "Out") continue;
+
+    const row: RowMap = {};
+    headers.forEach((h, idx) => { row[h] = cols[idx] ?? ""; });
+
+    if (!byPosition.has(posId)) byPosition.set(posId, {});
+    const group = byPosition.get(posId)!;
+    if (entry === "In")  group.in  = row;
+    if (entry === "Out") group.out = row;
+  }
+
+  const trades: ParsedTrade[] = [];
+
+  for (const [, group] of byPosition) {
+    const out = group.out;
+    if (!out) continue;
+
+    const symbol = (out["symbol"] ?? "")
+      .toUpperCase()
+      .replace(/\.RAW$/i, "")
+      .replace(/\.$/, "");
+    if (!symbol || symbol.length < 2 || symbol.length > 12) continue;
+
+    const closedAt = parseDate(out["date"] ?? "");
+    if (!closedAt) continue;
+
+    const inRow      = group.in;
+    const actionRaw  = inRow ? (inRow["action"] ?? "") : (out["action"] ?? "");
+    const dir: "long" | "short" = /sell|short/i.test(actionRaw) ? "short" : "long";
+
+    const entryPrice = inRow  ? num(inRow["price"])  : null;
+    const exitPrice  = num(out["price"]);
+    const pnl        = num((out["profit"] ?? "").replace(/[$]/g, ""));
+    const volume     = num(out["volume"] ?? out["volumeclosed"] ?? "");
+
+    trades.push({
+      symbol,
+      direction:   dir,
+      entry_price: entryPrice,
+      exit_price:  exitPrice,
+      pnl,
+      volume,
+      closed_at:   closedAt,
+      source:      "csv_import",
+    });
+  }
+
+  return trades;
+}
+
 // ── CSV Parser ────────────────────────────────────────────────────────────────
 // Supports comma-separated and tab-separated (MT5 history export).
 // Column matching is header-name–driven so column order doesn't matter.
@@ -55,9 +137,14 @@ function parseCsv(text: string): ParsedTrade[] {
   // Find first line that looks like a header
   let hdrIdx = 0;
   for (let i = 0; i < Math.min(5, lines.length); i++) {
-    if (/symbol|ticket|order|item|instrument/i.test(lines[i])) { hdrIdx = i; break; }
+    if (/symbol|ticket|order|item|instrument|deal/i.test(lines[i])) { hdrIdx = i; break; }
   }
   const raw = lines[hdrIdx].split(sep).map(h => h.replace(/^"|"$/g, "").toLowerCase().trim());
+
+  // Delegate to MT5 deal parser when the format has Deal + Action + Entry columns
+  if (raw.includes("deal") && raw.includes("action") && raw.includes("entry")) {
+    return parseMT5Deals(text);
+  }
 
   const col = (preds: RegExp[]): number =>
     raw.findIndex(h => preds.some(p => p.test(h)));
