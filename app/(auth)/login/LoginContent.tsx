@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { motion } from "framer-motion";
 import Image from "next/image";
-import { Eye, EyeOff, ArrowRight } from "lucide-react";
+import { Eye, EyeOff } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 export default function LoginContent() {
@@ -129,8 +129,8 @@ export default function LoginContent() {
 
           <p className="text-center text-sm text-[#6B7280] mt-6">
             Don&apos;t have an account?{" "}
-            <Link href="/checkout" className="text-[#4BA3D4] hover:text-[#F2F0EB] font-medium transition-colors inline-flex items-center gap-1">
-              Start your 10-day trial <ArrowRight className="w-3.5 h-3.5" />
+            <Link href="/register" className="text-[#4BA3D4] hover:text-[#F2F0EB] font-medium transition-colors">
+              Create one
             </Link>
           </p>
         </div>

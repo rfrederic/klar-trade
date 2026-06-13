@@ -22,15 +22,39 @@ export default function ResetPassword() {
   const searchParams = useSearchParams();
 
   useEffect(() => {
-    // If the auth callback couldn't exchange the code, show the error immediately.
     if (searchParams.get("error")) {
       setChecking(false);
       return;
     }
 
-    // Check for an existing session immediately — handles the race where
-    // PASSWORD_RECOVERY fires before the subscription below is registered,
-    // and also the normal PKCE case where the callback already set cookies.
+    // Implicit flow: Supabase sends #access_token=...&type=recovery
+    const hash = typeof window !== "undefined" ? window.location.hash : "";
+    if (hash.includes("access_token")) {
+      const params = new URLSearchParams(hash.slice(1));
+      const accessToken = params.get("access_token");
+      const refreshToken = params.get("refresh_token") ?? "";
+      if (accessToken) {
+        supabase.auth
+          .setSession({ access_token: accessToken, refresh_token: refreshToken })
+          .then(({ error }) => {
+            if (!error) setReady(true);
+            setChecking(false);
+          });
+        return;
+      }
+    }
+
+    // PKCE flow: Supabase sends ?code=...
+    const code = searchParams.get("code");
+    if (code) {
+      supabase.auth.exchangeCodeForSession(code).then(({ error }) => {
+        if (!error) setReady(true);
+        setChecking(false);
+      });
+      return;
+    }
+
+    // Already has a session (PASSWORD_RECOVERY fired before subscription)
     supabase.auth.getSession().then(({ data: { session } }) => {
       if (session) setReady(true);
       setChecking(false);
