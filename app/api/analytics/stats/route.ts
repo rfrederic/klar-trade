@@ -1,14 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServerClient, createServiceClient } from "@/lib/supabase/server";
+import { resolveUserTimezone } from "@/lib/timezone-server";
+import { getZonedParts, startOfLocalYearUtc } from "@/lib/timezone";
 
-function rangeFrom(range: string): Date {
+function rangeFrom(range: string, timeZone: string): Date {
   const now = new Date();
   switch (range) {
     case "7D":  return new Date(now.getTime() - 7 * 86400000);
     case "30D": return new Date(now.getTime() - 30 * 86400000);
     case "90D": return new Date(now.getTime() - 90 * 86400000);
     case "6M":  return new Date(now.getTime() - 180 * 86400000);
-    case "YTD": { const d = new Date(now); d.setMonth(0, 1); d.setHours(0, 0, 0, 0); return d; }
+    case "YTD": return startOfLocalYearUtc(timeZone, now);
     default:    return new Date(2000, 0, 1);
   }
 }
@@ -18,10 +20,13 @@ export async function GET(req: NextRequest) {
   const { data: { user } } = await authClient.auth.getUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const range = new URL(req.url).searchParams.get("range") ?? "30D";
-  const from = rangeFrom(range);
+  const { searchParams } = new URL(req.url);
+  const range = searchParams.get("range") ?? "30D";
 
   const supabase = createServiceClient();
+  const timeZone = await resolveUserTimezone(supabase, user.id, searchParams.get("tz"));
+  const from = rangeFrom(range, timeZone);
+
   const { data: trades, error } = await supabase
     .from("trades")
     .select("id, symbol, direction, pnl, emotion, grade, followed_plan, closed_at, volume")
@@ -58,7 +63,7 @@ export async function GET(req: NextRequest) {
   // ─── Time of day ──────────────────────────────────────────────────────────
   const hourMap: Record<number, { wins: number; total: number; pnl: number }> = {};
   for (const t of closingTrades) {
-    const h = new Date(t.closed_at).getUTCHours();
+    const h = getZonedParts(t.closed_at, timeZone).hour;
     if (!hourMap[h]) hourMap[h] = { wins: 0, total: 0, pnl: 0 };
     hourMap[h].total += 1;
     hourMap[h].pnl += t.pnl;
@@ -78,7 +83,7 @@ export async function GET(req: NextRequest) {
   const DOW = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
   const dowMap: Record<number, { wins: number; total: number; pnl: number }> = {};
   for (const t of closingTrades) {
-    const d = new Date(t.closed_at).getUTCDay();
+    const d = getZonedParts(t.closed_at, timeZone).dayOfWeek;
     if (!dowMap[d]) dowMap[d] = { wins: 0, total: 0, pnl: 0 };
     dowMap[d].total += 1;
     dowMap[d].pnl += t.pnl;

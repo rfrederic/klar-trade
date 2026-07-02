@@ -12,6 +12,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { createClient } from "@/lib/supabase/client";
+import { getBrowserTimezone } from "@/lib/timezone";
 
 // ─── Symbol map ───────────────────────────────────────────────────────────────
 
@@ -228,14 +229,18 @@ export default function TradingPage() {
   // Watchlist — load
   useEffect(() => {
     const supabase = createClient();
-    supabase
-      .from("watchlist")
-      .select("id, symbol, display_name")
-      .order("created_at", { ascending: true })
-      .then(({ data }) => {
-        setWatchlistItems(data ?? []);
-        setWatchlistLoading(false);
-      });
+    supabase.auth.getUser().then(({ data: { user } }) => {
+      if (!user) { setWatchlistLoading(false); return; }
+      supabase
+        .from("watchlist")
+        .select("id, symbol, display_name")
+        .eq("user_id", user.id)
+        .order("created_at", { ascending: true })
+        .then(({ data }) => {
+          setWatchlistItems(data ?? []);
+          setWatchlistLoading(false);
+        });
+    });
   }, []);
 
   const addSymbol = async (raw: string) => {
@@ -259,7 +264,9 @@ export default function TradingPage() {
   const removeSymbol = async (id: string) => {
     setWatchlistItems((prev) => prev.filter((w) => w.id !== id));
     const supabase = createClient();
-    await supabase.from("watchlist").delete().eq("id", id);
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+    await supabase.from("watchlist").delete().eq("id", id).eq("user_id", user.id);
   };
 
   const openJournalForm = () => {
@@ -320,7 +327,7 @@ export default function TradingPage() {
   const fetchLive = useCallback(async (silent = false) => {
     if (!silent) setLoading(true); else setRefreshing(true);
     try {
-      const res = await fetch("/api/trading/live");
+      const res = await fetch(`/api/trading/live?tz=${encodeURIComponent(getBrowserTimezone())}`);
       if (res.ok) {
         const data = await res.json();
         setLive(data);

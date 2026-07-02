@@ -26,12 +26,13 @@ function fmtBalance(n: number) {
 }
 
 async function retryFetch(url: string, options: RequestInit, retries = 2, delayMs = 3000): Promise<Response> {
+  let res: Response;
   for (let i = 0; i < retries; i++) {
-    const res = await fetch(url, options);
+    res = await fetch(url, options);
     if (res.status !== 504 && res.status !== 503) return res;
     if (i < retries - 1) await new Promise(r => setTimeout(r, delayMs));
   }
-  return fetch(url, options);
+  return res!;
 }
 
 export async function POST(req: NextRequest) {

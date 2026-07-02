@@ -7,6 +7,7 @@ import { Flame, TrendingUp, CalendarDays } from "lucide-react";
 import { BIOMES, getBiome } from "@/lib/biomes";
 import type { Biome } from "@/lib/biomes";
 import { BiomeCanvas } from "@/components/ui/BiomeCanvas";
+import { getBrowserTimezone } from "@/lib/timezone";
 
 type InsightType = "pattern" | "streak" | "recommendation";
 
@@ -274,7 +275,7 @@ export function RefugeHistory() {
   const [milestoneBiome, setMilestoneBiome] = useState<Biome | null>(null);
 
   useEffect(() => {
-    fetch("/api/refuge/session")
+    fetch(`/api/refuge/session?tz=${encodeURIComponent(getBrowserTimezone())}`)
       .then(r => r.ok ? r.json() : null)
       .then(d => { setData(d); setLoading(false); })
       .catch(() => setLoading(false));

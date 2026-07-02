@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServerClient, createServiceClient } from "@/lib/supabase/server";
+import { resolveUserTimezone } from "@/lib/timezone-server";
+import { getZonedParts, localMonthRangeUtc } from "@/lib/timezone";
 
 export async function GET(req: NextRequest) {
   const authClient = await createServerClient();
@@ -10,24 +12,27 @@ export async function GET(req: NextRequest) {
   const year = parseInt(searchParams.get("year") ?? String(new Date().getFullYear()));
   const month = parseInt(searchParams.get("month") ?? String(new Date().getMonth()));
 
-  const from = new Date(year, month, 1).toISOString();
-  const to = new Date(year, month + 1, 0, 23, 59, 59, 999).toISOString();
-
   const supabase = createServiceClient();
+  const timeZone = await resolveUserTimezone(supabase, user.id, searchParams.get("tz"));
+
+  // [start, end) — end is the start of the next local month (exclusive).
+  const { start, end } = localMonthRangeUtc(year, month, timeZone);
+
   const { data: trades, error } = await supabase
     .from("trades")
     .select("*")
     .eq("user_id", user.id)
-    .gte("closed_at", from)
-    .lte("closed_at", to)
+    .gte("closed_at", start.toISOString())
+    .lt("closed_at", end.toISOString())
     .order("closed_at", { ascending: false });
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
-  // Build daily calendar aggregates
+  // Build daily calendar aggregates, keyed by the trade's local day-of-month
+  // in the user's timezone (not the server's clock or raw UTC).
   const calendar: Record<number, { pnl: number; trades: number }> = {};
   for (const trade of trades ?? []) {
-    const day = new Date(trade.closed_at).getDate();
+    const day = getZonedParts(trade.closed_at, timeZone).day;
     if (!calendar[day]) calendar[day] = { pnl: 0, trades: 0 };
     calendar[day].pnl += trade.pnl ?? 0;
     calendar[day].trades += 1;

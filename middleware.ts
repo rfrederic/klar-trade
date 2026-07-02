@@ -39,7 +39,6 @@ export async function middleware(request: NextRequest) {
     pathname.startsWith("/brokers")       ||
     pathname.startsWith("/edge")          ||
     pathname.startsWith("/klar-ai")       ||
-    pathname.startsWith("/community")     ||
     pathname.startsWith("/notebook")      ||
     pathname.startsWith("/refuge")        ||
     pathname.startsWith("/settings")      ||

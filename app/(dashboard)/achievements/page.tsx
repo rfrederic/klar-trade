@@ -7,6 +7,7 @@ import { Loader2, Trophy, Lock, ArrowRight } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { motion, AnimatePresence } from "framer-motion";
 import type { Achievement } from "@/app/api/achievements/route";
+import { getBrowserTimezone } from "@/lib/timezone";
 
 type Category = "all" | "volume" | "performance" | "discipline" | "journaling";
 type Filter = "all" | "unlocked" | "locked";
@@ -117,7 +118,7 @@ export default function AchievementsPage() {
   const [filter, setFilter] = useState<Filter>("all");
 
   useEffect(() => {
-    fetch("/api/achievements")
+    fetch(`/api/achievements?tz=${encodeURIComponent(getBrowserTimezone())}`)
       .then((r) => r.json())
       .then((d) => {
         setAchievements(d.achievements ?? []);

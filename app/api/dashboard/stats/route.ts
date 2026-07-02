@@ -1,21 +1,22 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServerClient, createServiceClient } from "@/lib/supabase/server";
+import { resolveUserTimezone } from "@/lib/timezone-server";
+import { startOfLocalDayUtc, startOfLocalYearUtc } from "@/lib/timezone";
 
 const MT_CLIENT = "https://mt-client-api-v1.agiliumtrade.agiliumtrade.ai";
 const MT_PROVISION = "https://mt-provisioning-api-v1.agiliumtrade.agiliumtrade.ai";
 
-function rangeFrom(timeframe: string): Date {
+function rangeFrom(timeframe: string, timeZone: string): Date {
   const d = new Date();
   switch (timeframe) {
-    case "Today": d.setHours(0, 0, 0, 0); break;
-    case "7D":    d.setDate(d.getDate() - 7); break;
-    case "30D":   d.setDate(d.getDate() - 30); break;
-    case "90D":   d.setDate(d.getDate() - 90); break;
-    case "YTD":   d.setMonth(0, 1); d.setHours(0, 0, 0, 0); break;
-    case "ALL":   d.setFullYear(2000); break;
-    default:      d.setDate(d.getDate() - 30);
+    case "Today": return startOfLocalDayUtc(timeZone, d);
+    case "7D":    d.setDate(d.getDate() - 7); return d;
+    case "30D":   d.setDate(d.getDate() - 30); return d;
+    case "90D":   d.setDate(d.getDate() - 90); return d;
+    case "YTD":   return startOfLocalYearUtc(timeZone, d);
+    case "ALL":   d.setFullYear(2000); return d;
+    default:      d.setDate(d.getDate() - 30); return d;
   }
-  return d;
 }
 
 export async function GET(req: NextRequest) {
@@ -27,7 +28,8 @@ export async function GET(req: NextRequest) {
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const supabase = createServiceClient();
-  const from = rangeFrom(timeframe);
+  const timeZone = await resolveUserTimezone(supabase, user.id, searchParams.get("tz"));
+  const from = rangeFrom(timeframe, timeZone);
 
   // Always compute stats from trades table (works with or without MT5)
   const { data: dbTrades } = await supabase
@@ -48,8 +50,7 @@ export async function GET(req: NextRequest) {
   const profitFactor = grossLoss > 0 ? (grossWin / grossLoss).toFixed(2) : null;
 
   // Today's trades
-  const todayStart = new Date();
-  todayStart.setHours(0, 0, 0, 0);
+  const todayStart = startOfLocalDayUtc(timeZone);
   const { data: todayDbTrades } = await supabase
     .from("trades")
     .select("pnl")

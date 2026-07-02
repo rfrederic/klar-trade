@@ -13,8 +13,6 @@ const PLAN_PRICE_MAP: Record<string, { priceId: string; mode: Stripe.Checkout.Se
 
 export async function POST(req: NextRequest) {
   try {
-    console.log("[stripe/checkout] STRIPE_SECRET_KEY length:", process.env.STRIPE_SECRET_KEY?.length ?? 0);
-
     if (!process.env.STRIPE_SECRET_KEY) {
       return NextResponse.json({ error: "Stripe is not configured" }, { status: 503 });
     }

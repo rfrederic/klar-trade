@@ -5,6 +5,7 @@ import { Sidebar } from "@/components/dashboard/Sidebar";
 import { CommandPalette } from "@/components/ui/CommandPalette";
 import { QuoteToast } from "@/components/ui/QuoteSystem";
 import { cn } from "@/lib/utils";
+import { getBrowserTimezone } from "@/lib/timezone";
 
 export function DashboardShell({ children }: { children: React.ReactNode }) {
   const [collapsed, setCollapsed] = useState(false);
@@ -19,6 +20,17 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
+  }, []);
+
+  // Detect and persist the user's timezone once per session so server-side
+  // aggregation (journal calendar, analytics, "today" stats) can bucket by
+  // the user's actual local day instead of the server's clock.
+  useEffect(() => {
+    fetch("/api/settings/profile", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ timezone: getBrowserTimezone() }),
+    }).catch(() => {});
   }, []);
 
   return (

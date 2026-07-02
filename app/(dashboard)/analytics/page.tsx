@@ -10,6 +10,7 @@ import {
 import { getBiome } from "@/lib/biomes";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { getBrowserTimezone, getLocalDateString } from "@/lib/timezone";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -143,7 +144,8 @@ export default function AnalyticsPage() {
 
   useEffect(() => {
     setLoading(true);
-    fetch(`/api/analytics/stats?range=${dateRange}`)
+    const tz = getBrowserTimezone();
+    fetch(`/api/analytics/stats?range=${dateRange}&tz=${encodeURIComponent(tz)}`)
       .then((r) => r.json())
       .then((d) => { setData(d); setLoading(false); })
       .catch(() => setLoading(false));
@@ -151,7 +153,9 @@ export default function AnalyticsPage() {
 
   // Fetch Refuge sessions + daily P&L once on mount (28-day window)
   useEffect(() => {
-    fetch("/api/refuge/session")
+    const tz = getBrowserTimezone();
+
+    fetch(`/api/refuge/session?tz=${encodeURIComponent(tz)}`)
       .then(r => r.ok ? r.json() : null)
       .then(d => { if (d?.calendar) setRefugeCalendar(d.calendar); })
       .catch(() => {});
@@ -163,14 +167,14 @@ export default function AnalyticsPage() {
     const pM   = m === 0 ? 11 : m - 1;
 
     Promise.all([
-      fetch(`/api/journal/trades?year=${y}&month=${m}`).then(r => r.ok ? r.json() : null),
-      fetch(`/api/journal/trades?year=${pY}&month=${pM}`).then(r => r.ok ? r.json() : null),
+      fetch(`/api/journal/trades?year=${y}&month=${m}&tz=${encodeURIComponent(tz)}`).then(r => r.ok ? r.json() : null),
+      fetch(`/api/journal/trades?year=${pY}&month=${pM}&tz=${encodeURIComponent(tz)}`).then(r => r.ok ? r.json() : null),
     ]).then(([curr, prev]) => {
       const byDate: Record<string, number> = {};
       for (const d of [curr, prev]) {
         if (!d?.trades) continue;
         for (const t of d.trades as { closed_at: string; pnl: number | null }[]) {
-          const date = t.closed_at.slice(0, 10);
+          const date = getLocalDateString(t.closed_at, tz);
           byDate[date] = (byDate[date] ?? 0) + (t.pnl ?? 0);
         }
       }

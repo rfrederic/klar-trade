@@ -1,5 +1,7 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { createServerClient, createServiceClient } from "@/lib/supabase/server";
+import { resolveUserTimezone } from "@/lib/timezone-server";
+import { startOfLocalDayUtc } from "@/lib/timezone";
 
 const MT_CLIENT    = "https://mt-client-api-v1.agiliumtrade.agiliumtrade.ai";
 const MT_PROVISION = "https://mt-provisioning-api-v1.agiliumtrade.agiliumtrade.ai";
@@ -144,16 +146,16 @@ async function fetchTLPositions(conn: TLConnection): Promise<{
 
 // ── Route ─────────────────────────────────────────────────────────────────────
 
-export async function GET() {
+export async function GET(req: NextRequest) {
   const authClient = await createServerClient();
   const { data: { user } } = await authClient.auth.getUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const supabase = createServiceClient();
+  const timeZone = await resolveUserTimezone(supabase, user.id, req.nextUrl.searchParams.get("tz"));
 
   // ── Today's closed trades ─────────────────────────────────────────────────
-  const todayStart = new Date();
-  todayStart.setHours(0, 0, 0, 0);
+  const todayStart = startOfLocalDayUtc(timeZone);
   const { data: todayTrades } = await supabase
     .from("trades")
     .select("pnl")
@@ -206,7 +208,7 @@ export async function GET() {
     .eq("user_id", user.id)
     .eq("broker", "mt5")
     .eq("status", "connected")
-    .single();
+    .maybeSingle();
 
   if (!mt5Conn?.meta_account_id) {
     // No MT5 connection — use TradeLocker only

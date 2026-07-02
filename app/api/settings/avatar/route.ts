@@ -13,7 +13,13 @@ export async function POST(req: NextRequest) {
   if (!file.type.startsWith("image/")) return NextResponse.json({ error: "File must be an image" }, { status: 400 });
   if (file.size > 2 * 1024 * 1024) return NextResponse.json({ error: "File must be under 2 MB" }, { status: 400 });
 
-  const ext = file.name.split(".").pop()?.toLowerCase() ?? "jpg";
+  const MIME_TO_EXT: Record<string, string> = {
+    "image/jpeg": "jpg",
+    "image/png":  "png",
+    "image/gif":  "gif",
+    "image/webp": "webp",
+  };
+  const ext = MIME_TO_EXT[file.type] ?? "jpg";
   const path = `${user.id}/avatar.${ext}`;
   const buffer = new Uint8Array(await file.arrayBuffer());
 

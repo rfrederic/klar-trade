@@ -14,6 +14,13 @@ const MODEL = "llama-3.3-70b-versatile";
 
 const BASE_SYSTEM = `You are KlarAI, an elite trading psychology coach and performance analyst for KlarTrade. You help traders improve discipline, manage emotions, analyze their trading patterns, and build better trading habits. You have access to the user's trading context. Be direct, specific, and actionable. Reference trading concepts naturally. Never give financial advice.`;
 
+// Fixed, server-defined prompts for lightweight callers — never accept a
+// free-form system prompt from the client, or any authenticated user could
+// turn this endpoint into an open LLM proxy on our Groq quota.
+const SYSTEM_PROMPTS: Record<string, string> = {
+  support: "You are KlarTrade support. Help the user with questions about the KlarTrade app. Be concise and friendly.",
+};
+
 export async function POST(req: NextRequest) {
   const authClient = await createServerClient();
   const { data: { user } } = await authClient.auth.getUser();
@@ -24,7 +31,7 @@ export async function POST(req: NextRequest) {
   }
 
   const body = await req.json();
-  const { messages, systemOverride } = body;
+  const { messages, mode } = body;
   if (!Array.isArray(messages) || messages.length === 0) {
     return NextResponse.json({ error: "Messages required" }, { status: 400 });
   }
@@ -34,8 +41,12 @@ export async function POST(req: NextRequest) {
     content: m.content,
   }));
 
-  // Lightweight callers can pass a custom system prompt, skipping trader data
-  if (systemOverride) {
+  // Lightweight callers can request a fixed alternate system prompt, skipping trader data
+  if (mode) {
+    const systemOverride = SYSTEM_PROMPTS[mode as string];
+    if (!systemOverride) {
+      return NextResponse.json({ error: "Invalid mode" }, { status: 400 });
+    }
     try {
       const response = await getGroq().chat.completions.create({
         model: MODEL,

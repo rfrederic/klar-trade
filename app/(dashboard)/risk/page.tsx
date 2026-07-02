@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { Header } from "@/components/dashboard/Header";
 import { Shield, AlertTriangle, TrendingDown, Calculator, Zap, Info, Loader2, TrendingUp } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { getBrowserTimezone } from "@/lib/timezone";
 
 // ─── Instrument registry ────────────────────────────────────────────────────
 type CalcMode = "ticks" | "price";
@@ -139,7 +140,7 @@ export default function RiskPage() {
   const [stopTicks, setStopTicks] = useState("10");
 
   useEffect(() => {
-    fetch("/api/risk/stats")
+    fetch(`/api/risk/stats?tz=${encodeURIComponent(getBrowserTimezone())}`)
       .then((r) => r.json())
       .then((d) => setRiskStats(d))
       .finally(() => setStatsLoading(false));

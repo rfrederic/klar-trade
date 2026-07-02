@@ -5,8 +5,8 @@ import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Search, LayoutDashboard, TrendingUp, Layers, BookOpen, StickyNote,
-  Newspaper, Leaf, Sparkles, BarChart2, FlaskConical, Sliders, Settings,
-  Users, GraduationCap, Trophy, Plus, LogOut, X,
+  Leaf, Sparkles, BarChart2, Settings,
+  Trophy, Plus, LogOut, X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -16,20 +16,15 @@ const commands = [
   { label: "Edge — Strategy Playbook", icon: Layers, href: "/edge", group: "Navigate" },
   { label: "Journal", icon: BookOpen, href: "/journal", group: "Navigate" },
   { label: "Analytics", icon: BarChart2, href: "/analytics", group: "Navigate" },
-  { label: "Backtesting", icon: FlaskConical, href: "/backtesting", group: "Navigate" },
   { label: "KlarAI", icon: Sparkles, href: "/klar-ai", group: "Navigate" },
-  { label: "Community", icon: Users, href: "/community", group: "Navigate" },
-  { label: "Academy", icon: GraduationCap, href: "/academy", group: "Navigate" },
   { label: "Achievements", icon: Trophy, href: "/achievements", group: "Navigate" },
   { label: "Notebook", icon: StickyNote, href: "/notebook", group: "Navigate" },
-  { label: "News Calendar", icon: Newspaper, href: "/news", group: "Navigate" },
   { label: "Refuge", icon: Leaf, href: "/refuge", group: "Navigate" },
-  { label: "Indicators", icon: Sliders, href: "/indicators", group: "Navigate" },
   { label: "Settings", icon: Settings, href: "/settings", group: "Navigate" },
   { label: "New Trade", icon: Plus, href: "/journal", group: "Actions" },
   { label: "New Note", icon: Plus, href: "/notebook", group: "Actions" },
   { label: "New Edge Plan", icon: Plus, href: "/edge", group: "Actions" },
-  { label: "Sign Out", icon: LogOut, href: "/", group: "Account" },
+  { label: "Sign Out", icon: LogOut, href: "/", group: "Account", signOut: true },
 ];
 
 interface CommandPaletteProps {
@@ -49,6 +44,16 @@ export function CommandPalette({ open, onClose }: CommandPaletteProps) {
 
   const groups = Array.from(new Set(filtered.map((c) => c.group)));
 
+  const runCommand = async (cmd: (typeof commands)[number]) => {
+    if (cmd.signOut) {
+      await fetch("/api/auth/logout", { method: "POST" });
+      router.push(cmd.href);
+      router.refresh();
+      return;
+    }
+    router.push(cmd.href);
+  };
+
   useEffect(() => {
     if (open) {
       setQuery("");
@@ -64,13 +69,13 @@ export function CommandPalette({ open, onClose }: CommandPaletteProps) {
       if (e.key === "ArrowDown") setSelected((s) => Math.min(s + 1, filtered.length - 1));
       if (e.key === "ArrowUp") setSelected((s) => Math.max(s - 1, 0));
       if (e.key === "Enter" && filtered[selected]) {
-        router.push(filtered[selected].href);
+        runCommand(filtered[selected]);
         onClose();
       }
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [open, filtered, selected, router, onClose]);
+  }, [open, filtered, selected, onClose, runCommand]);
 
   let itemIndex = -1;
 
@@ -130,7 +135,7 @@ export function CommandPalette({ open, onClose }: CommandPaletteProps) {
                                 selected === idx ? "bg-[#03588C]/20 text-[#F2F0EB]" : "text-[#6B7280] hover:text-[#F2F0EB] hover:bg-white/[0.03]"
                               )}
                               onMouseEnter={() => setSelected(idx)}
-                              onClick={() => { router.push(cmd.href); onClose(); }}
+                              onClick={() => { runCommand(cmd); onClose(); }}
                             >
                               <cmd.icon className="w-4 h-4 flex-shrink-0" />
                               <span className="text-sm font-medium">{cmd.label}</span>

@@ -47,7 +47,7 @@ export async function POST(req: NextRequest) {
   };
 
   console.log("[mt5/connect] POST", provisionUrl);
-  console.log("[mt5/connect] request body:", JSON.stringify(provisionBody));
+  console.log("[mt5/connect] request body:", JSON.stringify({ ...provisionBody, password: "[redacted]" }));
 
   let metaAccountId: string;
   try {

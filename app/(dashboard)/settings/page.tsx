@@ -59,8 +59,6 @@ const HELP_ARTICLES: { title: string; body: string }[] = [
   },
 ];
 
-const SUPPORT_SYSTEM_PROMPT = "You are KlarTrade support. Help the user with questions about the KlarTrade app. Be concise and friendly.";
-
 const PRIVACY_ITEMS: { key: "analytics_consent" | "ai_training_consent" | "email_notifications" | "public_profile"; label: string; desc: string }[] = [
   { key: "analytics_consent",   label: "Analytics & Performance Tracking", desc: "Help us improve KlarTrade with anonymized usage data" },
   { key: "ai_training_consent", label: "AI Training Consent",              desc: "Allow your anonymized journal data to improve KlarAI recommendations" },
@@ -402,7 +400,7 @@ export default function SettingsPage() {
       const res = await fetch("/api/klar-ai/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ messages: next, systemOverride: SUPPORT_SYSTEM_PROMPT }),
+        body: JSON.stringify({ messages: next, mode: "support" }),
       });
       const data = await res.json();
       const reply = res.ok ? data.content : (data.error ?? "Failed to get response");

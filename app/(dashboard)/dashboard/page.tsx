@@ -11,6 +11,7 @@ import {
 import { cn } from "@/lib/utils";
 import { QuoteWidget } from "@/components/ui/QuoteSystem";
 import { BIOMES } from "@/lib/biomes";
+import { getBrowserTimezone, getLocalDateString } from "@/lib/timezone";
 
 const timeframes = ["Today", "7D", "30D", "90D", "YTD", "ALL"];
 
@@ -22,13 +23,14 @@ function RefugeNudge() {
   const [accent, setAccent] = useState("#4A9B6F");
 
   useEffect(() => {
-    const today      = new Date().toISOString().slice(0, 10);
+    const tz         = getBrowserTimezone();
+    const today      = getLocalDateString(new Date(), tz);
     const dismissKey = `refuge_nudge_dismissed_${today}`;
     if (localStorage.getItem(dismissKey)) return;
 
     Promise.all([
-      fetch("/api/dashboard/stats?timeframe=7D").then(r => r.ok ? r.json() : null),
-      fetch("/api/refuge/session").then(r => r.ok ? r.json() : null),
+      fetch(`/api/dashboard/stats?timeframe=7D&tz=${encodeURIComponent(tz)}`).then(r => r.ok ? r.json() : null),
+      fetch(`/api/refuge/session?tz=${encodeURIComponent(tz)}`).then(r => r.ok ? r.json() : null),
     ]).then(([dashData, refugeData]) => {
       // Bail out if either fetch failed
       if (!dashData || !refugeData) return;
@@ -64,7 +66,7 @@ function RefugeNudge() {
   }, []);
 
   const dismiss = () => {
-    localStorage.setItem(`refuge_nudge_dismissed_${new Date().toISOString().slice(0, 10)}`, "1");
+    localStorage.setItem(`refuge_nudge_dismissed_${getLocalDateString(new Date(), getBrowserTimezone())}`, "1");
     setShow(false);
   };
 
@@ -195,7 +197,7 @@ interface CustomItem { label: string; checked: boolean; }
 interface PreMarketStore { checks: boolean[]; custom: CustomItem[]; }
 
 function todayKey() {
-  return `premarket_${new Date().toISOString().slice(0, 10)}`;
+  return `premarket_${getLocalDateString(new Date(), getBrowserTimezone())}`;
 }
 
 function loadStore(): PreMarketStore {
@@ -235,7 +237,7 @@ export default function DashboardPage() {
     else setLoading(true);
 
     try {
-      const res = await fetch(`/api/dashboard/stats?timeframe=${tf}`);
+      const res = await fetch(`/api/dashboard/stats?timeframe=${tf}&tz=${encodeURIComponent(getBrowserTimezone())}`);
       const json = await res.json();
       if (res.ok) {
         setStats(json.stats);

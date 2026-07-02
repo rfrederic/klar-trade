@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServerClient, createServiceClient } from "@/lib/supabase/server";
+import { resolveUserTimezone } from "@/lib/timezone-server";
+import { localDayRangeUtc } from "@/lib/timezone";
 
 export async function GET(req: NextRequest) {
   const authClient = await createServerClient();
@@ -11,16 +13,17 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "date param required (YYYY-MM-DD)" }, { status: 400 });
   }
 
-  const dayStart = `${date}T00:00:00.000Z`;
-  const dayEnd   = `${date}T23:59:59.999Z`;
-
   const supabase = createServiceClient();
+  const timeZone = await resolveUserTimezone(supabase, user.id, req.nextUrl.searchParams.get("tz"));
+  // `date` is the user's local calendar date — convert to the matching UTC range.
+  const { start, end } = localDayRangeUtc(date, timeZone);
+
   const { data, error } = await supabase
     .from("sanctuary_sessions")
     .select("mood, biome, duration_min, created_at")
     .eq("user_id", user.id)
-    .gte("created_at", dayStart)
-    .lte("created_at", dayEnd)
+    .gte("created_at", start.toISOString())
+    .lt("created_at", end.toISOString())
     .order("created_at", { ascending: false })
     .limit(1)
     .maybeSingle();

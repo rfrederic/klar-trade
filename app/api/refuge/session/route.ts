@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServerClient, createServiceClient } from "@/lib/supabase/server";
 import { BIOMES, getBiome } from "@/lib/biomes";
+import { resolveUserTimezone } from "@/lib/timezone-server";
+import { getLocalDateString, getZonedParts, localDateStringDaysAgo } from "@/lib/timezone";
 
 const DAY_NAMES = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
 
@@ -63,7 +65,7 @@ function accentByName(biomeName: string): string {
   return "#03588C";
 }
 
-function buildInsights(rows: Row[], streak: number): Insight[] {
+function buildInsights(rows: Row[], streak: number, timeZone: string): Insight[] {
   if (rows.length === 0) return [];
   const insights: Insight[] = [];
 
@@ -80,7 +82,7 @@ function buildInsights(rows: Row[], streak: number): Insight[] {
   const moodDow: Record<string, number[]> = {};
   for (const m of moods) moodDow[m] = [0, 0, 0, 0, 0, 0, 0];
   for (const r of rows) {
-    const dow = new Date(r.created_at).getUTCDay();
+    const dow = getZonedParts(r.created_at, timeZone).dayOfWeek;
     if (moodDow[r.mood]) moodDow[r.mood][dow]++;
   }
 
@@ -223,20 +225,29 @@ const EMPTY_RESPONSE = {
   recent:   [] as unknown[],
 };
 
-export async function GET() {
+export async function GET(req: NextRequest) {
   const authClient = await createServerClient();
   const { data: { user } } = await authClient.auth.getUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const supabase = createServiceClient();
+  const timeZone = await resolveUserTimezone(supabase, user.id, req.nextUrl.searchParams.get("tz"));
   const since30  = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+  const since365 = new Date(Date.now() - 365 * 24 * 60 * 60 * 1000).toISOString();
 
-  const { data: sessions, error } = await supabase
-    .from("sanctuary_sessions")
-    .select("mood, biome, duration_min, completed, created_at")
-    .eq("user_id", user.id)
-    .gte("created_at", since30)
-    .order("created_at", { ascending: false });
+  const [{ data: sessions, error }, { data: streakSessions }] = await Promise.all([
+    supabase
+      .from("sanctuary_sessions")
+      .select("mood, biome, duration_min, completed, created_at")
+      .eq("user_id", user.id)
+      .gte("created_at", since30)
+      .order("created_at", { ascending: false }),
+    supabase
+      .from("sanctuary_sessions")
+      .select("created_at")
+      .eq("user_id", user.id)
+      .gte("created_at", since365),
+  ]);
 
   if (error) return NextResponse.json(EMPTY_RESPONSE);
 
@@ -246,12 +257,11 @@ export async function GET() {
   const sessions30d = rows.length;
   const minutes30d  = rows.reduce((s, r) => s + (r.duration_min ?? 0), 0);
 
-  const daySet = new Set(rows.map(r => r.created_at.slice(0, 10)));
+  // Streak can span further back than the 30-day window used for stats/insights above
+  const daySet = new Set((streakSessions ?? []).map(r => getLocalDateString(r.created_at, timeZone)));
   let streak = 0;
   for (let i = 0; i < 365; i++) {
-    const d = new Date();
-    d.setUTCDate(d.getUTCDate() - i);
-    if (daySet.has(d.toISOString().slice(0, 10))) {
+    if (daySet.has(localDateStringDaysAgo(i, timeZone))) {
       streak++;
     } else if (i > 0) {
       break;
@@ -261,10 +271,8 @@ export async function GET() {
   // ── 28-day calendar ──
   const calendar: { date: string; mood: string | null; biome: string | null; duration_min: number | null }[] = [];
   for (let i = 27; i >= 0; i--) {
-    const d = new Date();
-    d.setUTCDate(d.getUTCDate() - i);
-    const dateStr = d.toISOString().slice(0, 10);
-    const hit     = rows.find(r => r.created_at.startsWith(dateStr));
+    const dateStr = localDateStringDaysAgo(i, timeZone);
+    const hit     = rows.find(r => getLocalDateString(r.created_at, timeZone) === dateStr);
     calendar.push({
       date: dateStr,
       mood: hit?.mood ?? null,
@@ -278,7 +286,7 @@ export async function GET() {
   const heatmap: Record<string, number[]> = {};
   for (const m of moods) heatmap[m] = [0, 0, 0, 0, 0, 0, 0];
   for (const r of rows) {
-    const dow = new Date(r.created_at).getUTCDay();
+    const dow = getZonedParts(r.created_at, timeZone).dayOfWeek;
     if (heatmap[r.mood]) heatmap[r.mood][dow]++;
   }
 
@@ -286,7 +294,7 @@ export async function GET() {
     stats: { sessions30d, minutes30d, streak },
     calendar,
     heatmap,
-    insights: buildInsights(rows, streak),
+    insights: buildInsights(rows, streak, timeZone),
     recent:   rows.slice(0, 8),
   });
 }

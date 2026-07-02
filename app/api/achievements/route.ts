@@ -1,5 +1,7 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { createServerClient, createServiceClient } from "@/lib/supabase/server";
+import { resolveUserTimezone } from "@/lib/timezone-server";
+import { getLocalDateString, getZonedParts } from "@/lib/timezone";
 
 export interface Achievement {
   id: string;
@@ -33,28 +35,29 @@ function longestWinStreak(trades: Trade[]): number {
   return best;
 }
 
-function profitableMonths(trades: Trade[]): number {
+function profitableMonths(trades: Trade[], timeZone: string): number {
   const months: Record<string, number> = {};
   for (const t of trades) {
-    const key = t.closed_at.slice(0, 7);
+    const { year, month } = getZonedParts(t.closed_at, timeZone);
+    const key = `${year}-${String(month).padStart(2, "0")}`;
     months[key] = (months[key] ?? 0) + (t.pnl ?? 0);
   }
   return Object.values(months).filter((v) => v > 0).length;
 }
 
-function bestSingleDay(trades: Trade[]): number {
+function bestSingleDay(trades: Trade[], timeZone: string): number {
   const days: Record<string, number> = {};
   for (const t of trades) {
-    const key = t.closed_at.slice(0, 10);
+    const key = getLocalDateString(t.closed_at, timeZone);
     days[key] = (days[key] ?? 0) + (t.pnl ?? 0);
   }
   return Math.max(0, ...Object.values(days));
 }
 
-function hadBounceBack(trades: Trade[]): boolean {
+function hadBounceBack(trades: Trade[], timeZone: string): boolean {
   const days: Record<string, number> = {};
   for (const t of trades) {
-    const key = t.closed_at.slice(0, 10);
+    const key = getLocalDateString(t.closed_at, timeZone);
     days[key] = (days[key] ?? 0) + (t.pnl ?? 0);
   }
   const sortedDays = Object.entries(days).sort(([a], [b]) => a.localeCompare(b));
@@ -64,12 +67,13 @@ function hadBounceBack(trades: Trade[]): boolean {
   return false;
 }
 
-export async function GET() {
+export async function GET(req: NextRequest) {
   const authClient = await createServerClient();
   const { data: { user } } = await authClient.auth.getUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const supabase = createServiceClient();
+  const timeZone = await resolveUserTimezone(supabase, user.id, req.nextUrl.searchParams.get("tz"));
   const { data } = await supabase
     .from("trades")
     .select("pnl, closed_at, followed_plan, emotion, notes, grade, setup")
@@ -86,9 +90,9 @@ export async function GET() {
   const notesCount = trades.filter((t) => t.notes && t.notes.trim()).length;
   const gradeACount = trades.filter((t) => t.grade === "A" || t.grade === "A+").length;
   const setupCount = new Set(trades.map((t) => t.setup).filter(Boolean)).size;
-  const profMonths = profitableMonths(trades);
-  const bestDay = bestSingleDay(trades);
-  const bounceBack = hadBounceBack(trades);
+  const profMonths = profitableMonths(trades, timeZone);
+  const bestDay = bestSingleDay(trades, timeZone);
+  const bounceBack = hadBounceBack(trades, timeZone);
 
   const def = (
     id: string, title: string, description: string, icon: string, xp: number,

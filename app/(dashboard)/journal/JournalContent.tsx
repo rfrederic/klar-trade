@@ -10,6 +10,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { getBiome } from "@/lib/biomes";
+import { getBrowserTimezone, getLocalDateString } from "@/lib/timezone";
 
 const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
@@ -266,8 +267,9 @@ function AddTradeModal({ onClose, onAdded }: { onClose: () => void; onAdded: () 
   const [bannerDismissed, setBannerDismissed] = useState(false);
 
   useEffect(() => {
-    const today = new Date().toISOString().slice(0, 10);
-    fetch(`/api/refuge/mood-context?date=${today}`)
+    const tz = getBrowserTimezone();
+    const today = getLocalDateString(new Date(), tz);
+    fetch(`/api/refuge/mood-context?date=${today}&tz=${encodeURIComponent(tz)}`)
       .then(r => r.ok ? r.json() : { context: null })
       .then(d => {
         setRefugeCtx(d.context ?? null);
@@ -652,6 +654,7 @@ export default function JournalContent() {
   const [trades, setTrades] = useState<Trade[]>([]);
   const [calendar, setCalendar] = useState<Record<number, CalendarEntry>>({});
   const [dayNotes, setDayNotes] = useState("");
+  const [dayTrades, setDayTrades] = useState<Trade[]>([]);
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
   const [lastSync, setLastSync] = useState<Date | null>(null);
@@ -669,7 +672,8 @@ export default function JournalContent() {
   const loadTrades = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await fetch(`/api/journal/trades?year=${year}&month=${month}`);
+      const tz = getBrowserTimezone();
+      const res = await fetch(`/api/journal/trades?year=${year}&month=${month}&tz=${encodeURIComponent(tz)}`);
       if (res.ok) {
         const data = await res.json();
         setTrades(data.trades ?? []);
@@ -682,13 +686,18 @@ export default function JournalContent() {
 
   useEffect(() => { loadTrades(); }, [loadTrades]);
 
-  // Load day notes whenever selected day changes
+  // Load day notes + this day's trades (server-filtered by local date)
+  // whenever the selected day changes.
   useEffect(() => {
     const dateStr = `${year}-${String(month + 1).padStart(2, "0")}-${String(selectedDay).padStart(2, "0")}`;
-    fetch(`/api/journal/days/${dateStr}`)
+    const tz = getBrowserTimezone();
+    fetch(`/api/journal/days/${dateStr}?tz=${encodeURIComponent(tz)}`)
       .then((r) => r.json())
-      .then((d) => setDayNotes(d.notes ?? ""))
-      .catch(() => setDayNotes(""));
+      .then((d) => {
+        setDayNotes(d.notes ?? "");
+        setDayTrades(d.trades ?? []);
+      })
+      .catch(() => { setDayNotes(""); setDayTrades([]); });
   }, [year, month, selectedDay]);
 
   const saveDayNotes = (notes: string) => {
@@ -716,12 +725,32 @@ export default function JournalContent() {
   const handleSync = async () => {
     setSyncing(true);
     try {
-      const res = await fetch("/api/journal/sync", { method: "POST" });
-      if (res.ok) {
-        const data = await res.json();
-        setLastSync(new Date());
-        if ((data.synced ?? 0) > 0) await loadTrades();
+      const listRes = await fetch("/api/brokers/list");
+      if (!listRes.ok) return;
+      const { connections } = await listRes.json();
+
+      let anyImported = false;
+      for (const conn of connections ?? []) {
+        const endpoint =
+          conn.broker === "mt5"         ? "/api/brokers/mt5/sync" :
+          conn.broker === "tradelocker" ? "/api/brokers/tradelocker/sync" :
+          conn.broker === "ctrader"     ? "/api/brokers/ctrader/sync" :
+          null;
+        if (!endpoint) continue;
+
+        const res = await fetch(endpoint, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ connectionId: conn.id }),
+        });
+        if (res.ok) {
+          const data = await res.json();
+          if ((data.tradesImported ?? 0) > 0) anyImported = true;
+        }
       }
+
+      setLastSync(new Date());
+      if (anyImported) await loadTrades();
     } finally {
       setSyncing(false);
     }
@@ -735,7 +764,8 @@ export default function JournalContent() {
   };
 
   // Derived stats
-  const selectedDayTrades = trades.filter((t) => new Date(t.closed_at).getDate() === selectedDay);
+  const selectedDateStr = `${year}-${String(month + 1).padStart(2, "0")}-${String(selectedDay).padStart(2, "0")}`;
+  const selectedDayTrades = dayTrades;
   const dayData = calendar[selectedDay];
   const totalPnL = Object.values(calendar).reduce((a, d) => a + d.pnl, 0);
   const winDays = Object.values(calendar).filter((d) => d.pnl > 0).length;
