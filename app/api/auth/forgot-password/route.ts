@@ -11,7 +11,7 @@ export async function POST(req: Request) {
   }
 
   if (!siteUrl) {
-    siteUrl = process.env.NODE_ENV === "development" ? "http://localhost:3000" : "https://klartrade.com";
+    siteUrl = new URL(req.url).origin;
   }
 
   const redirectTo = new URL("/reset-password", siteUrl).toString();
