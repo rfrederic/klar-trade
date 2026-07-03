@@ -386,8 +386,8 @@ function AddTradeModal({ onClose, onAdded }: { onClose: () => void; onAdded: () 
               <input type="number" step="any" value={form.exit_price} onChange={set("exit_price")} placeholder="0.00" className={inputCls} />
             </div>
             <div>
-              <label className="block text-xs text-[#6B7280] mb-1.5">P&L ($)</label>
-              <input type="number" step="any" value={form.pnl} onChange={set("pnl")} placeholder="0.00" className={inputCls} />
+              <label className="block text-xs text-[#6B7280] mb-1.5">P&L ($) *</label>
+              <input type="number" step="any" value={form.pnl} onChange={set("pnl")} placeholder="-0.00 for a loss" required className={inputCls} />
             </div>
           </div>
           <div className="grid grid-cols-2 gap-3">
@@ -474,8 +474,9 @@ function TradeCard({ trade, expanded, onToggle, onUpdate }: {
     notesTimer.current = setTimeout(() => onUpdate({ notes: val }), 800);
   };
 
+  const hasPnl = trade.pnl != null;
   const pnl = trade.pnl ?? 0;
-  const isWin = pnl >= 0;
+  const isWin = hasPnl && pnl >= 0;
   const closedTime = new Date(trade.closed_at).toLocaleString("en-US", {
     month: "short", day: "numeric", hour: "2-digit", minute: "2-digit", hour12: false,
   });
@@ -487,7 +488,7 @@ function TradeCard({ trade, expanded, onToggle, onUpdate }: {
         onClick={onToggle}
       >
         <div className="flex items-center gap-4">
-          <div className={cn("w-2 h-2 rounded-full flex-shrink-0", isWin ? "bg-[#22C55E]" : "bg-red-500")} />
+          <div className={cn("w-2 h-2 rounded-full flex-shrink-0", !hasPnl ? "bg-[#6B7280]" : isWin ? "bg-[#22C55E]" : "bg-red-500")} />
           <div className="text-left">
             <div className="flex items-center gap-2">
               <span className="text-sm font-bold text-[#F2F0EB]">{trade.symbol}</span>
@@ -517,8 +518,8 @@ function TradeCard({ trade, expanded, onToggle, onUpdate }: {
           </div>
         </div>
         <div className="text-right">
-          <p className={cn("text-sm font-bold", isWin ? "text-[#22C55E]" : "text-red-400")}>
-            {isWin ? "+" : ""}${Math.abs(pnl).toFixed(2)}
+          <p className={cn("text-sm font-bold", !hasPnl ? "text-[#6B7280]" : isWin ? "text-[#22C55E]" : "text-red-400")}>
+            {!hasPnl ? "Pending" : `${isWin ? "+" : ""}$${Math.abs(pnl).toFixed(2)}`}
           </p>
           {trade.volume != null && (
             <p className="text-[11px] text-[#6B7280]">{trade.volume} lots</p>
@@ -940,18 +941,22 @@ export default function JournalContent() {
 
                     {/* Day trades mini-list */}
                     <div className="space-y-1.5 mt-2">
-                      {selectedDayTrades.map((t) => (
+                      {selectedDayTrades.map((t) => {
+                        const tHasPnl = t.pnl != null;
+                        const tIsWin = tHasPnl && (t.pnl ?? 0) >= 0;
+                        return (
                         <div key={t.id} className="flex items-center justify-between px-3 py-2 bg-white/[0.02] rounded-xl">
                           <div className="flex items-center gap-2">
-                            <div className={cn("w-1.5 h-1.5 rounded-full flex-shrink-0", (t.pnl ?? 0) >= 0 ? "bg-[#22C55E]" : "bg-red-500")} />
+                            <div className={cn("w-1.5 h-1.5 rounded-full flex-shrink-0", !tHasPnl ? "bg-[#6B7280]" : tIsWin ? "bg-[#22C55E]" : "bg-red-500")} />
                             <span className="text-xs font-medium text-[#F2F0EB]">{t.symbol}</span>
                             <span className="text-[10px] text-[#6B7280]">{t.direction === "long" ? "L" : "S"}</span>
                           </div>
-                          <span className={cn("text-xs font-bold", (t.pnl ?? 0) >= 0 ? "text-[#22C55E]" : "text-red-400")}>
-                            {(t.pnl ?? 0) >= 0 ? "+" : ""}${Math.abs(t.pnl ?? 0).toFixed(2)}
+                          <span className={cn("text-xs font-bold", !tHasPnl ? "text-[#6B7280]" : tIsWin ? "text-[#22C55E]" : "text-red-400")}>
+                            {!tHasPnl ? "Pending" : `${tIsWin ? "+" : ""}$${Math.abs(t.pnl ?? 0).toFixed(2)}`}
                           </span>
                         </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   </div>
                 ) : (
