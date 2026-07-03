@@ -255,8 +255,17 @@ const EMOTION_TO_REFUGE: Record<string, string> = {
 
 type RefugeCtx = { mood: string; biome: string; duration_min: number } | null;
 
-function AddTradeModal({ onClose, onAdded }: { onClose: () => void; onAdded: () => void }) {
-  const [form, setForm] = useState({
+function AddTradeModal({ trade, onClose, onAdded }: { trade?: Trade; onClose: () => void; onAdded: () => void }) {
+  const isEdit = trade != null;
+  const [form, setForm] = useState(() => trade ? {
+    symbol: trade.symbol, direction: trade.direction,
+    entry_price: trade.entry_price != null ? String(trade.entry_price) : "",
+    exit_price: trade.exit_price != null ? String(trade.exit_price) : "",
+    pnl: trade.pnl != null ? String(trade.pnl) : "",
+    volume: trade.volume != null ? String(trade.volume) : "",
+    closed_at: new Date(trade.closed_at).toISOString().slice(0, 16),
+    notes: trade.notes ?? "", grade: trade.grade ?? "", emotion: trade.emotion ?? "",
+  } : {
     symbol: "", direction: "long", entry_price: "", exit_price: "",
     pnl: "", volume: "", closed_at: new Date().toISOString().slice(0, 16),
     notes: "", grade: "", emotion: "",
@@ -267,6 +276,7 @@ function AddTradeModal({ onClose, onAdded }: { onClose: () => void; onAdded: () 
   const [bannerDismissed, setBannerDismissed] = useState(false);
 
   useEffect(() => {
+    if (isEdit) return; // Refuge mood pre-fill only makes sense for new trades.
     const tz = getBrowserTimezone();
     const today = getLocalDateString(new Date(), tz);
     fetch(`/api/refuge/mood-context?date=${today}&tz=${encodeURIComponent(tz)}`)
@@ -277,7 +287,7 @@ function AddTradeModal({ onClose, onAdded }: { onClose: () => void; onAdded: () 
         if (mapped) setForm(f => ({ ...f, emotion: mapped }));
       })
       .catch(() => setRefugeCtx(null));
-  }, []);
+  }, [isEdit]);
 
   const set = (k: string) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) =>
     setForm((f) => ({ ...f, [k]: e.target.value }));
@@ -286,26 +296,33 @@ function AddTradeModal({ onClose, onAdded }: { onClose: () => void; onAdded: () 
     e.preventDefault();
     setLoading(true);
     setError(null);
-    const res = await fetch("/api/journal/trades", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        symbol: form.symbol,
-        direction: form.direction,
-        entry_price: form.entry_price ? parseFloat(form.entry_price) : null,
-        exit_price: form.exit_price ? parseFloat(form.exit_price) : null,
-        pnl: form.pnl ? parseFloat(form.pnl) : null,
-        volume: form.volume ? parseFloat(form.volume) : null,
-        closed_at: new Date(form.closed_at).toISOString(),
-        notes: form.notes || null,
-        grade: form.grade || null,
-        emotion: form.emotion || null,
-      }),
-    });
+    const payload = {
+      symbol: form.symbol,
+      direction: form.direction,
+      entry_price: form.entry_price ? parseFloat(form.entry_price) : null,
+      exit_price: form.exit_price ? parseFloat(form.exit_price) : null,
+      pnl: form.pnl ? parseFloat(form.pnl) : null,
+      volume: form.volume ? parseFloat(form.volume) : null,
+      closed_at: new Date(form.closed_at).toISOString(),
+      notes: form.notes || null,
+      grade: form.grade || null,
+      emotion: form.emotion || null,
+    };
+    const res = isEdit
+      ? await fetch(`/api/journal/trades/${trade.id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        })
+      : await fetch("/api/journal/trades", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
     setLoading(false);
     if (!res.ok) {
       const j = await res.json();
-      setError(j.error ?? "Failed to add trade");
+      setError(j.error ?? `Failed to ${isEdit ? "save" : "add"} trade`);
       return;
     }
     onAdded();
@@ -322,7 +339,7 @@ function AddTradeModal({ onClose, onAdded }: { onClose: () => void; onAdded: () 
     <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
       <div className="glass rounded-2xl w-full max-w-md p-6 shadow-glow-sm">
         <div className="flex items-center justify-between mb-5">
-          <h2 className="text-lg font-bold text-[#F2F0EB]">Add Trade</h2>
+          <h2 className="text-lg font-bold text-[#F2F0EB]">{isEdit ? "Edit Trade" : "Add Trade"}</h2>
           <button onClick={onClose} className="text-[#6B7280] hover:text-[#F2F0EB] transition-colors">
             <X className="w-5 h-5" />
           </button>
@@ -446,7 +463,7 @@ function AddTradeModal({ onClose, onAdded }: { onClose: () => void; onAdded: () 
           <div className="flex gap-3 pt-1">
             <Button type="button" variant="outline" className="flex-1" onClick={onClose}>Cancel</Button>
             <Button type="submit" className="flex-1" disabled={loading}>
-              {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : "Add Trade"}
+              {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : isEdit ? "Save Changes" : "Add Trade"}
             </Button>
           </div>
         </form>
@@ -457,11 +474,13 @@ function AddTradeModal({ onClose, onAdded }: { onClose: () => void; onAdded: () 
 
 // ─── TradeCard ────────────────────────────────────────────────────────────────
 
-function TradeCard({ trade, expanded, onToggle, onUpdate }: {
+function TradeCard({ trade, expanded, onToggle, onUpdate, onEdit, onDelete }: {
   trade: Trade;
   expanded: boolean;
   onToggle: () => void;
   onUpdate: (updates: Partial<Trade>) => void;
+  onEdit: () => void;
+  onDelete: () => void;
 }) {
   const [notesDraft, setNotesDraft] = useState(trade.notes ?? "");
   const notesTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -605,6 +624,24 @@ function TradeCard({ trade, expanded, onToggle, onUpdate }: {
               )}
             </div>
           )}
+
+          {/* Actions */}
+          <div className="flex items-center gap-2 pt-1">
+            {trade.source === "manual" && (
+              <button
+                onClick={(e) => { e.stopPropagation(); onEdit(); }}
+                className="text-[11px] font-medium text-[#6B7280] hover:text-[#4BA3D4] transition-colors px-2 py-1"
+              >
+                Edit
+              </button>
+            )}
+            <button
+              onClick={(e) => { e.stopPropagation(); onDelete(); }}
+              className="text-[11px] font-medium text-[#6B7280] hover:text-red-400 transition-colors px-2 py-1"
+            >
+              Delete
+            </button>
+          </div>
         </div>
       )}
     </div>
@@ -662,6 +699,9 @@ export default function JournalContent() {
   const [expandedTrade, setExpandedTrade] = useState<string | null>(null);
   const [showAddModal, setShowAddModal]       = useState(false);
   const [showImportModal, setShowImportModal] = useState(false);
+  const [editingTrade, setEditingTrade]       = useState<Trade | null>(null);
+  const [showResetModal, setShowResetModal]   = useState(false);
+  const [resetting, setResetting]             = useState(false);
   const searchParams = useSearchParams();
 
   useEffect(() => {
@@ -689,10 +729,10 @@ export default function JournalContent() {
 
   // Load day notes + this day's trades (server-filtered by local date)
   // whenever the selected day changes.
-  useEffect(() => {
+  const loadDayTrades = useCallback(() => {
     const dateStr = `${year}-${String(month + 1).padStart(2, "0")}-${String(selectedDay).padStart(2, "0")}`;
     const tz = getBrowserTimezone();
-    fetch(`/api/journal/days/${dateStr}?tz=${encodeURIComponent(tz)}`)
+    return fetch(`/api/journal/days/${dateStr}?tz=${encodeURIComponent(tz)}`)
       .then((r) => r.json())
       .then((d) => {
         setDayNotes(d.notes ?? "");
@@ -700,6 +740,8 @@ export default function JournalContent() {
       })
       .catch(() => { setDayNotes(""); setDayTrades([]); });
   }, [year, month, selectedDay]);
+
+  useEffect(() => { loadDayTrades(); }, [loadDayTrades]);
 
   const saveDayNotes = (notes: string) => {
     setDayNotes(notes);
@@ -721,6 +763,31 @@ export default function JournalContent() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(updates),
     });
+  };
+
+  const deleteTrade = async (id: string) => {
+    if (!confirm("Delete this trade? This cannot be undone.")) return;
+    setTrades((prev) => prev.filter((t) => t.id !== id));
+    setDayTrades((prev) => prev.filter((t) => t.id !== id));
+    await fetch(`/api/journal/trades/${id}`, { method: "DELETE" });
+    loadTrades();
+    loadDayTrades();
+  };
+
+  const clearAllTrades = async () => {
+    setResetting(true);
+    try {
+      await fetch("/api/journal/trades", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ confirm: "DELETE_ALL_TRADES" }),
+      });
+      setShowResetModal(false);
+      loadTrades();
+      loadDayTrades();
+    } finally {
+      setResetting(false);
+    }
   };
 
   const handleSync = async () => {
@@ -814,6 +881,12 @@ export default function JournalContent() {
               <Plus className="w-3.5 h-3.5" />
               Add Manual
             </Button>
+            <button
+              onClick={() => setShowResetModal(true)}
+              className="text-[11px] font-medium text-[#6B7280] hover:text-red-400 transition-colors px-2"
+            >
+              Reset
+            </button>
           </div>
         }
       />
@@ -1145,6 +1218,8 @@ export default function JournalContent() {
                   expanded={expandedTrade === trade.id}
                   onToggle={() => setExpandedTrade(expandedTrade === trade.id ? null : trade.id)}
                   onUpdate={(updates) => updateTrade(trade.id, updates)}
+                  onEdit={() => setEditingTrade(trade)}
+                  onDelete={() => deleteTrade(trade.id)}
                 />
               ))
             )}
@@ -1155,7 +1230,15 @@ export default function JournalContent() {
       {showAddModal && (
         <AddTradeModal
           onClose={() => setShowAddModal(false)}
-          onAdded={loadTrades}
+          onAdded={() => { loadTrades(); loadDayTrades(); }}
+        />
+      )}
+
+      {editingTrade && (
+        <AddTradeModal
+          trade={editingTrade}
+          onClose={() => setEditingTrade(null)}
+          onAdded={() => { loadTrades(); loadDayTrades(); }}
         />
       )}
 
@@ -1165,6 +1248,60 @@ export default function JournalContent() {
           onImported={loadTrades}
         />
       )}
+
+      {showResetModal && (
+        <ResetTradesModal
+          resetting={resetting}
+          onClose={() => setShowResetModal(false)}
+          onConfirm={clearAllTrades}
+        />
+      )}
+    </div>
+  );
+}
+
+// ─── ResetTradesModal ───────────────────────────────────────────────────────────
+
+function ResetTradesModal({ resetting, onClose, onConfirm }: {
+  resetting: boolean;
+  onClose: () => void;
+  onConfirm: () => void;
+}) {
+  const [confirmText, setConfirmText] = useState("");
+
+  return (
+    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+      <div className="glass rounded-2xl w-full max-w-sm p-6 shadow-glow-sm">
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-lg font-bold text-[#F2F0EB]">Delete all trades</h2>
+          <button onClick={onClose} className="text-[#6B7280] hover:text-[#F2F0EB] transition-colors">
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+        <p className="text-sm text-[#6B7280] mb-4">
+          This permanently deletes every trade in your journal — manual entries and broker-synced trades alike.
+          This cannot be undone.
+        </p>
+        <label className="block text-xs text-[#6B7280] mb-1.5">
+          Type <span className="font-bold text-[#F2F0EB]">DELETE</span> to confirm
+        </label>
+        <input
+          value={confirmText}
+          onChange={(e) => setConfirmText(e.target.value)}
+          placeholder="DELETE"
+          className="w-full bg-white/[0.04] border border-white/[0.08] rounded-xl px-3 py-2.5 text-sm text-[#F2F0EB] placeholder-[#6B7280] focus:outline-none focus:border-red-500/60 transition-all mb-4"
+        />
+        <div className="flex gap-3">
+          <Button variant="outline" className="flex-1" onClick={onClose}>Cancel</Button>
+          <Button
+            className="flex-1 bg-red-600 hover:bg-red-700 text-white"
+            disabled={confirmText !== "DELETE" || resetting}
+            onClick={onConfirm}
+          >
+            {resetting ? <Loader2 className="w-4 h-4 animate-spin" /> : "Delete everything"}
+          </Button>
+        </div>
+      </div>
     </div>
   );
 }

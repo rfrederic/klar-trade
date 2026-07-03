@@ -115,7 +115,8 @@ export default function CheckoutPage() {
 
   useEffect(() => {
     fetch("/api/auth/me")
-      .then((r) => setIsLoggedIn(r.ok))
+      .then((r) => r.json())
+      .then((d) => setIsLoggedIn(!!d.user))
       .catch(() => setIsLoggedIn(false));
   }, []);
 

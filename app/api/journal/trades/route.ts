@@ -77,3 +77,23 @@ export async function POST(req: NextRequest) {
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   return NextResponse.json({ trade: data }, { status: 201 });
 }
+
+// Full reset — deletes every trade the user has logged (manual and
+// broker-synced). Requires an explicit confirmation body so this can't be
+// triggered by an accidental or malformed request.
+export async function DELETE(req: NextRequest) {
+  const authClient = await createServerClient();
+  const { data: { user } } = await authClient.auth.getUser();
+  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  const body = await req.json().catch(() => ({}));
+  if (body.confirm !== "DELETE_ALL_TRADES") {
+    return NextResponse.json({ error: "Confirmation required" }, { status: 400 });
+  }
+
+  const supabase = createServiceClient();
+  const { error } = await supabase.from("trades").delete().eq("user_id", user.id);
+
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  return NextResponse.json({ success: true });
+}
