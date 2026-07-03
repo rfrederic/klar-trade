@@ -15,6 +15,7 @@ export default function ResetPassword() {
   const [message, setMessage]   = useState("");
   const [ready, setReady]       = useState(false);
   const [checking, setChecking] = useState(true);
+  const [linkError, setLinkError] = useState<string | null>(null);
   const [showPw, setShowPw]     = useState(false);
   const [loading, setLoading]   = useState(false);
   const supabase     = createClient();
@@ -22,40 +23,57 @@ export default function ResetPassword() {
   const searchParams = useSearchParams();
 
   useEffect(() => {
-    if (searchParams.get("error")) {
+    // Supabase reports an expired/invalid recovery link either as query
+    // params (?error=...) or, for the implicit flow, inside the hash
+    // (#error=...&error_description=...) — check both.
+    const hash = typeof window !== "undefined" ? window.location.hash : "";
+    const hashParams = new URLSearchParams(hash.replace(/^#/, ""));
+    const queryError = searchParams.get("error_description") ?? searchParams.get("error");
+    const hashError = hashParams.get("error_description") ?? hashParams.get("error");
+    if (queryError || hashError) {
+      const reason = decodeURIComponent(queryError ?? hashError ?? "Unknown error");
+      console.error("[reset-password] recovery link error:", reason);
+      setLinkError(reason);
       setChecking(false);
       return;
     }
 
     // Implicit flow: Supabase sends #access_token=...&type=recovery
-    const hash = typeof window !== "undefined" ? window.location.hash : "";
-    if (hash.includes("access_token")) {
-      const params = new URLSearchParams(hash.slice(1));
-      const accessToken = params.get("access_token");
-      const refreshToken = params.get("refresh_token") ?? "";
-      if (accessToken) {
-        supabase.auth
-          .setSession({ access_token: accessToken, refresh_token: refreshToken })
-          .then(({ error }) => {
-            if (!error) setReady(true);
-            setChecking(false);
-          });
-        return;
-      }
+    const accessToken = hashParams.get("access_token");
+    if (accessToken) {
+      const refreshToken = hashParams.get("refresh_token") ?? "";
+      supabase.auth
+        .setSession({ access_token: accessToken, refresh_token: refreshToken })
+        .then(({ error }) => {
+          if (error) {
+            console.error("[reset-password] setSession failed:", error.message);
+            setLinkError(error.message);
+          } else {
+            setReady(true);
+          }
+          setChecking(false);
+        });
+      return;
     }
 
     // PKCE flow: Supabase sends ?code=...
     const code = searchParams.get("code");
     if (code) {
       supabase.auth.exchangeCodeForSession(code).then(({ error }) => {
-        if (!error) setReady(true);
+        if (error) {
+          console.error("[reset-password] exchangeCodeForSession failed:", error.message);
+          setLinkError(error.message);
+        } else {
+          setReady(true);
+        }
         setChecking(false);
       });
       return;
     }
 
     // Already has a session (PASSWORD_RECOVERY fired before subscription)
-    supabase.auth.getSession().then(({ data: { session } }) => {
+    supabase.auth.getSession().then(({ data: { session }, error }) => {
+      if (error) console.error("[reset-password] getSession failed:", error.message);
       if (session) setReady(true);
       setChecking(false);
     });
@@ -83,6 +101,7 @@ export default function ResetPassword() {
     const { error } = await supabase.auth.updateUser({ password });
     setLoading(false);
     if (error) {
+      console.error("[reset-password] updateUser failed:", error.message);
       setMessage(error.message);
     } else {
       setMessage("Password updated! Redirecting...");
@@ -124,7 +143,9 @@ export default function ResetPassword() {
           ) : !checking && !ready ? (
             <div className="text-center py-4">
               <h2 className="text-xl font-bold text-[#F2F0EB] mb-2">Link expired</h2>
-              <p className="text-sm text-[#6B7280] mb-6">This reset link is invalid or has already been used. Request a new one.</p>
+              <p className="text-sm text-[#6B7280] mb-6">
+                {linkError ?? "This reset link is invalid or has already been used."} Request a new one.
+              </p>
               <Link href="/forgot-password">
                 <Button className="w-full h-11">
                   <span className="flex items-center gap-2"><ArrowLeft className="w-4 h-4" /> Request new link</span>
