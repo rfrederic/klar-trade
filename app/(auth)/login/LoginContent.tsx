@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { motion } from "framer-motion";
 import Image from "next/image";
-import { Eye, EyeOff, ArrowRight } from "lucide-react";
+import { Eye, EyeOff, ArrowRight, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 export default function LoginContent() {
@@ -61,7 +61,15 @@ export default function LoginContent() {
           </span>
         </div>
 
-        <div className="glass rounded-2xl p-8 shadow-glow-sm">
+        <div className="glass rounded-2xl p-8 shadow-glow-sm relative">
+          <Link
+            href="/"
+            aria-label="Close"
+            className="absolute top-4 right-4 text-[#6B7280] hover:text-[#F2F0EB] transition-colors"
+          >
+            <X className="w-5 h-5" />
+          </Link>
+
           <div className="mb-6">
             <h1 className="text-2xl font-bold text-[#F2F0EB] mb-1">Welcome back</h1>
             <p className="text-sm text-[#6B7280]">Sign in to your trading dashboard</p>

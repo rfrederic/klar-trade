@@ -118,6 +118,7 @@ function Gauge({ label, value, sub, pct, ok }: { label: string; value: string; s
 // ─── Page ────────────────────────────────────────────────────────────────────
 interface RiskStats {
   brokerConnected: boolean;
+  usingManualBalance: boolean;
   accountBalance: number | null;
   today: { pnl: number; trades: number; grossLoss: number; winRate: number | null };
   open: { positions: number; floatingPnl: number };

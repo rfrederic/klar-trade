@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Inter, Plus_Jakarta_Sans } from "next/font/google";
 import "./globals.css";
 
@@ -50,12 +50,18 @@ export const metadata: Metadata = {
   },
 };
 
+// Viewport must go through Next's dedicated export, not a hand-written
+// <head><meta name="viewport" ...></head> — a manual tag there collides with
+// Next's own __next_viewport_boundary__ injection during streaming and was
+// the cause of the recurring __next_metadata_boundary__ hydration mismatch.
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+};
+
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en" className="dark" suppressHydrationWarning>
-      <head>
-        <meta name="viewport" content="width=device-width, initial-scale=1" />
-      </head>
       <body
         className={`${inter.variable} ${plusJakarta.variable} font-sans bg-[#050508] text-white antialiased`}
         suppressHydrationWarning

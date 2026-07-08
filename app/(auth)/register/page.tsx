@@ -5,9 +5,10 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import Image from "next/image";
-import { Eye, EyeOff, Check, ArrowRight } from "lucide-react";
+import { Eye, EyeOff, Check, ArrowRight, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { PAYMENTS_ENABLED } from "@/lib/payments";
 
 function PasswordStrength({ password }: { password: string }) {
   const checks = [
@@ -70,7 +71,7 @@ export default function RegisterPage() {
     }
 
     setSuccess(true);
-    setTimeout(() => router.push("/checkout"), 1500);
+    setTimeout(() => router.push(PAYMENTS_ENABLED ? "/checkout" : "/dashboard"), 1500);
   };
 
   return (
@@ -93,7 +94,15 @@ export default function RegisterPage() {
           </span>
         </div>
 
-        <div className="glass rounded-2xl p-8 shadow-glow-sm">
+        <div className="glass rounded-2xl p-8 shadow-glow-sm relative">
+          <Link
+            href="/"
+            aria-label="Close"
+            className="absolute top-4 right-4 text-[#6B7280] hover:text-[#F2F0EB] transition-colors"
+          >
+            <X className="w-5 h-5" />
+          </Link>
+
           <AnimatePresence mode="wait">
             {success ? (
               <motion.div
@@ -106,16 +115,22 @@ export default function RegisterPage() {
                   <Check className="w-7 h-7 text-[#22C55E]" strokeWidth={2.5} />
                 </div>
                 <h2 className="text-xl font-bold text-[#F2F0EB] mb-2">Account created!</h2>
-                <p className="text-sm text-[#6B7280] mb-6">Taking you to checkout…</p>
-                <Link href="/checkout">
-                  <Button className="w-full">Complete Checkout <ArrowRight className="w-4 h-4" /></Button>
+                <p className="text-sm text-[#6B7280] mb-6">
+                  {PAYMENTS_ENABLED ? "Taking you to checkout…" : "Taking you to your dashboard…"}
+                </p>
+                <Link href={PAYMENTS_ENABLED ? "/checkout" : "/dashboard"}>
+                  <Button className="w-full">
+                    {PAYMENTS_ENABLED ? "Complete Checkout" : "Go to Dashboard"} <ArrowRight className="w-4 h-4" />
+                  </Button>
                 </Link>
               </motion.div>
             ) : (
               <motion.div key="form">
                 <div className="mb-6">
                   <h1 className="text-2xl font-bold text-[#F2F0EB] mb-1">Create your account</h1>
-                  <p className="text-sm text-[#6B7280]">10-day trial · $10 to start.</p>
+                  {PAYMENTS_ENABLED && (
+                    <p className="text-sm text-[#6B7280]">10-day trial · $10 to start.</p>
+                  )}
                 </div>
 
                 <form onSubmit={handleSubmit} className="space-y-4">

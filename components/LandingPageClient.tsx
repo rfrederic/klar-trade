@@ -81,17 +81,17 @@ const pricing = [
   {
     name: "Starter", price: { monthly: 14, yearly: 12 },
     features: ["1 broker connection", "Manual journal", "Basic analytics", "100 trades/month", "Community access"],
-    cta: "Start 10-Day Trial — $10", highlight: false,
+    cta: "Get Started", highlight: false,
   },
   {
     name: "Pro", price: { monthly: 29, yearly: 24 },
     features: ["3 broker connections", "Automated journal", "Full analytics (50+ reports)", "KlarAI coach", "Refuge", "Backtesting", "Trade Replay", "Custom indicators (5)", "Priority support"],
-    cta: "Start 10-Day Trial — $10", highlight: true,
+    cta: "Get Started", highlight: true,
   },
   {
     name: "Elite", price: { monthly: 59, yearly: 49 },
     features: ["Unlimited broker connections", "Everything in Pro", "Unlimited custom indicators", "Advanced AI insights", "White-glove onboarding", "API access"],
-    cta: "Start 10-Day Trial — $10", highlight: false,
+    cta: "Get Started", highlight: false,
   },
 ];
 
@@ -152,7 +152,7 @@ export default function LandingPage() {
               <>
                 <Link href="/login" className="text-sm text-[#6B7280] hover:text-[#F2F0EB] px-3 py-2 transition-colors">Sign In</Link>
                 <Link href="/register" className="text-sm text-[#6B7280] hover:text-[#F2F0EB] px-3 py-2 transition-colors">Register</Link>
-                <Link href="/register" className="bg-[#03588C] text-white text-sm px-4 py-2 rounded-xl hover:bg-[#024a77] transition-all shadow-glow-xs">Start 10-Day Trial — $10</Link>
+                <Link href="/register" className="bg-[#03588C] text-white text-sm px-4 py-2 rounded-xl hover:bg-[#024a77] transition-all shadow-glow-xs">Get Started</Link>
               </>
             )}
           </div>
@@ -182,7 +182,7 @@ export default function LandingPage() {
                 <>
                   <Link href="/login" className="text-sm text-[#6B7280]" onClick={() => setNavOpen(false)}>Sign In</Link>
                   <Link href="/register" className="text-sm text-[#6B7280]" onClick={() => setNavOpen(false)}>Register</Link>
-                  <Link href="/register" className="bg-[#03588C] text-white text-sm px-4 py-2 rounded-xl text-center" onClick={() => setNavOpen(false)}>Start 10-Day Trial — $10</Link>
+                  <Link href="/register" className="bg-[#03588C] text-white text-sm px-4 py-2 rounded-xl text-center" onClick={() => setNavOpen(false)}>Get Started</Link>
                 </>
               )}
             </motion.div>
@@ -215,7 +215,7 @@ export default function LandingPage() {
                 whileTap={{ scale: 0.97 }}
                 className="flex items-center gap-2.5 bg-[#03588C] text-white px-7 py-3.5 rounded-xl text-[15px] font-semibold shadow-glow-sm"
               >
-                Start 10-Day Trial — $10
+                Get Started
                 <ArrowRight className="w-4 h-4" />
               </motion.button>
             </Link>
@@ -557,7 +557,7 @@ export default function LandingPage() {
                 whileTap={{ scale: 0.97 }}
                 className="inline-flex items-center gap-3 bg-[#03588C] text-white px-8 py-4 rounded-xl text-base font-bold shadow-glow-md"
               >
-                Start 10-Day Trial — $10
+                Get Started
                 <ArrowRight className="w-5 h-5" />
               </motion.button>
             </Link>

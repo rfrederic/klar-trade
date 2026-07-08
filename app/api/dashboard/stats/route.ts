@@ -148,8 +148,41 @@ export async function GET(req: NextRequest) {
     }
   }
 
+  // No broker connected — fall back to the user's manually-entered account
+  // size (profiles.account_size) so balance/equity and the equity curve
+  // still work before a real broker is linked.
+  let usingManualBalance = false;
+  if (liveBalance == null) {
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("account_size")
+      .eq("id", user.id)
+      .maybeSingle();
+
+    if (profile?.account_size != null) {
+      const { data: priorTrades } = await supabase
+        .from("trades")
+        .select("pnl")
+        .eq("user_id", user.id)
+        .lt("closed_at", from.toISOString());
+      const pnlBeforeRange = (priorTrades ?? []).reduce((s, t) => s + (t.pnl ?? 0), 0);
+
+      const startingBalance = Number(profile.account_size) + pnlBeforeRange;
+      liveBalance = startingBalance + totalPnl;
+      liveEquity = liveBalance;
+      usingManualBalance = true;
+
+      let rb = startingBalance;
+      for (let i = 0; i < equityCurve.length; i++) {
+        rb += trades[i].pnl ?? 0;
+        equityCurve[i] = Math.round(rb * 100) / 100;
+      }
+    }
+  }
+
   return NextResponse.json({
     brokerConnected,
+    usingManualBalance,
     stats: {
       balance: liveBalance,
       equity: liveEquity,

@@ -231,6 +231,7 @@ export default function DashboardPage() {
   const [equityCurve, setEquityCurve] = useState<number[]>([]);
   const [recentTrades, setRecentTrades] = useState<Trade[]>([]);
   const [brokerConnected, setBrokerConnected] = useState(false);
+  const [usingManualBalance, setUsingManualBalance] = useState(false);
 
   const fetchStats = useCallback(async (tf: string, showRefresh = false) => {
     if (showRefresh) setRefreshing(true);
@@ -245,6 +246,7 @@ export default function DashboardPage() {
         setEquityCurve(json.equityCurve ?? []);
         setRecentTrades(json.recentTrades ?? []);
         setBrokerConnected(json.brokerConnected ?? false);
+        setUsingManualBalance(json.usingManualBalance ?? false);
       }
     } catch { /* ignore */ }
     finally {
@@ -298,7 +300,7 @@ export default function DashboardPage() {
   const pnlPositive = totalPnl >= 0;
 
   const statCards = [
-    { label: "Account Balance", value: stats?.balance != null ? fmt(stats.balance) : "—", sub: brokerConnected ? "Live" : "Not connected", color: "text-[#F2F0EB]" },
+    { label: "Account Balance", value: stats?.balance != null ? fmt(stats.balance) : "—", sub: brokerConnected ? "Live" : usingManualBalance ? "Manual" : "Not connected", color: "text-[#F2F0EB]" },
     { label: "Closed PnL", value: stats?.totalTrades ? pnlStr(totalPnl) : "—", sub: `${timeframe} period`, color: pnlPositive ? "text-emerald-400" : "text-red-400" },
     { label: "Win Rate", value: stats?.winRate ? `${stats.winRate}%` : "—", sub: `${stats?.totalTrades ?? 0} trades`, color: "text-[#4BA3D4]" },
     { label: "Profit Factor", value: stats?.profitFactor ?? "—", sub: "Gross win / loss", color: "text-[#22C55E]" },
@@ -614,9 +616,9 @@ export default function DashboardPage() {
                   <div className="flex items-center justify-between">
                     <h3 className="text-[13px] font-semibold text-[#F2F0EB]">Account Summary</h3>
                     <div className={cn("flex items-center gap-1.5 text-[10px] font-semibold px-2 py-1 rounded-full",
-                      brokerConnected ? "bg-[#22C55E]/10 text-[#22C55E]" : "bg-white/[0.05] text-[#6B7280]")}>
-                      <div className={cn("w-1.5 h-1.5 rounded-full", brokerConnected ? "bg-[#22C55E]" : "bg-[#6B7280]")} />
-                      {brokerConnected ? "MT5 Live" : "No broker"}
+                      brokerConnected ? "bg-[#22C55E]/10 text-[#22C55E]" : usingManualBalance ? "bg-[#D9CA82]/10 text-[#D9CA82]" : "bg-white/[0.05] text-[#6B7280]")}>
+                      <div className={cn("w-1.5 h-1.5 rounded-full", brokerConnected ? "bg-[#22C55E]" : usingManualBalance ? "bg-[#D9CA82]" : "bg-[#6B7280]")} />
+                      {brokerConnected ? "MT5 Live" : usingManualBalance ? "Manual" : "No broker"}
                     </div>
                   </div>
                   {[

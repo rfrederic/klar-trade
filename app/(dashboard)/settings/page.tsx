@@ -11,6 +11,7 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { PAYMENTS_ENABLED } from "@/lib/payments";
 
 const tabs = [
   { id: "account", label: "Account", icon: User },
@@ -169,6 +170,13 @@ export default function SettingsPage() {
   const [connections, setConnections] = useState<BrokerConnection[]>([]);
   const [connectionsLoading, setConnectionsLoading] = useState(false);
 
+  // Manual account size (used for balance/equity + position sizing before a
+  // broker is connected)
+  const [accountSize, setAccountSize] = useState("");
+  const [accountSizeSaved, setAccountSizeSaved] = useState(false);
+  const [accountSizeError, setAccountSizeError] = useState<string | null>(null);
+  const accountSizeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   // UI state
   const [routineItems, setRoutineItems] = useState(routineSteps);
   const [guardrailItems, setGuardrailItems] = useState(guardrails);
@@ -225,10 +233,33 @@ export default function SettingsPage() {
             experience: data.user_metadata?.experience ?? "Intermediate",
           });
           if (data.avatar_url) setAvatarUrl(data.avatar_url);
+          if (data.account_size != null) setAccountSize(String(data.account_size));
         }
       })
       .finally(() => setProfileLoading(false));
   }, []);
+
+  const saveAccountSize = (value: string) => {
+    setAccountSize(value);
+    setAccountSizeSaved(false);
+    setAccountSizeError(null);
+    if (accountSizeTimer.current) clearTimeout(accountSizeTimer.current);
+    accountSizeTimer.current = setTimeout(async () => {
+      const n = parseFloat(value);
+      const res = await fetch("/api/settings/profile", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ account_size: value === "" ? null : (Number.isFinite(n) ? n : null) }),
+      });
+      if (res.ok) {
+        setAccountSizeSaved(true);
+        setTimeout(() => setAccountSizeSaved(false), 2000);
+      } else {
+        const j = await res.json().catch(() => ({}));
+        setAccountSizeError(j.error ?? "Failed to save");
+      }
+    }, 800);
+  };
 
   const handleAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -505,7 +536,7 @@ export default function SettingsPage() {
       <div className="flex-1 flex overflow-hidden">
         {/* Left nav */}
         <div className="w-52 flex-shrink-0 border-r border-white/[0.05] flex flex-col bg-[#06080f] p-3 space-y-0.5">
-          {tabs.map(({ id, label, icon: Icon }) => (
+          {tabs.filter(({ id }) => PAYMENTS_ENABLED || id !== "billing").map(({ id, label, icon: Icon }) => (
             <button
               key={id}
               onClick={() => setActiveTab(id)}
@@ -787,7 +818,6 @@ export default function SettingsPage() {
                       { label: "Default Risk per Trade (%)", value: "1.0" },
                       { label: "Max Risk per Trade (%)", value: "2.0" },
                       { label: "Default R:R Ratio", value: "2.0" },
-                      { label: "Account Size ($)", value: "50,000" },
                     ].map(({ label, value }) => (
                       <div key={label}>
                         <label className="text-[11px] font-semibold text-[#6B7280] uppercase tracking-wide block mb-1.5">{label}</label>
@@ -797,6 +827,28 @@ export default function SettingsPage() {
                         />
                       </div>
                     ))}
+                    <div>
+                      <label className="text-[11px] font-semibold text-[#6B7280] uppercase tracking-wide mb-1.5 flex items-center gap-1.5">
+                        Account Size ($)
+                        {accountSizeSaved && <CheckCircle className="w-3 h-3 text-[#22C55E]" />}
+                      </label>
+                      <input
+                        type="number"
+                        step="any"
+                        min="0"
+                        value={accountSize}
+                        onChange={(e) => saveAccountSize(e.target.value)}
+                        placeholder="e.g. 50000"
+                        className="w-full bg-white/[0.04] border border-white/[0.08] rounded-xl px-3 py-2.5 text-sm text-[#F2F0EB] font-mono-nums focus:outline-none focus:border-[#03588C]/50"
+                      />
+                      {accountSizeError ? (
+                        <p className="text-[10px] text-red-400 mt-1.5">{accountSizeError}</p>
+                      ) : (
+                        <p className="text-[10px] text-[#6B7280] mt-1.5">
+                          Used for balance, equity and position sizing until you connect a broker.
+                        </p>
+                      )}
+                    </div>
                   </div>
                 </div>
               </>

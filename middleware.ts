@@ -1,5 +1,6 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextRequest, NextResponse } from "next/server";
+import { PAYMENTS_ENABLED } from "@/lib/payments";
 
 export async function middleware(request: NextRequest) {
   let supabaseResponse = NextResponse.next({ request });
@@ -60,7 +61,7 @@ export async function middleware(request: NextRequest) {
   }
 
   // 2. Authenticated on a dashboard route → check paid plan
-  if (isDashboard && user) {
+  if (isDashboard && user && PAYMENTS_ENABLED) {
     const { data: profile } = await supabase
       .from("profiles")
       .select("plan, is_admin, stripe_customer_id")

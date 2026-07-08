@@ -6,6 +6,7 @@ import { Header } from "@/components/dashboard/Header";
 import {
   Plus, RefreshCw, ChevronLeft, ChevronRight,
   Check, AlertTriangle, Mic, X, Loader2, Smile, Meh, Frown, Leaf, Upload,
+  Pencil, Trash2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -1019,14 +1020,34 @@ export default function JournalContent() {
                         const tIsWin = tHasPnl && (t.pnl ?? 0) >= 0;
                         return (
                         <div key={t.id} className="flex items-center justify-between px-3 py-2 bg-white/[0.02] rounded-xl">
-                          <div className="flex items-center gap-2">
+                          <div className="flex items-center gap-2 min-w-0">
                             <div className={cn("w-1.5 h-1.5 rounded-full flex-shrink-0", !tHasPnl ? "bg-[#6B7280]" : tIsWin ? "bg-[#22C55E]" : "bg-red-500")} />
                             <span className="text-xs font-medium text-[#F2F0EB]">{t.symbol}</span>
                             <span className="text-[10px] text-[#6B7280]">{t.direction === "long" ? "L" : "S"}</span>
                           </div>
-                          <span className={cn("text-xs font-bold", !tHasPnl ? "text-[#6B7280]" : tIsWin ? "text-[#22C55E]" : "text-red-400")}>
-                            {!tHasPnl ? "Pending" : `${tIsWin ? "+" : ""}$${Math.abs(t.pnl ?? 0).toFixed(2)}`}
-                          </span>
+                          <div className="flex items-center gap-2 flex-shrink-0">
+                            <span className={cn("text-xs font-bold", !tHasPnl ? "text-[#6B7280]" : tIsWin ? "text-[#22C55E]" : "text-red-400")}>
+                              {!tHasPnl ? "Pending" : `${tIsWin ? "+" : ""}$${Math.abs(t.pnl ?? 0).toFixed(2)}`}
+                            </span>
+                            <div className="flex items-center gap-1">
+                              {t.source === "manual" && (
+                                <button
+                                  onClick={() => setEditingTrade(t)}
+                                  aria-label="Edit trade"
+                                  className="text-[#6B7280] hover:text-[#4BA3D4] transition-colors p-0.5"
+                                >
+                                  <Pencil className="w-3 h-3" />
+                                </button>
+                              )}
+                              <button
+                                onClick={() => deleteTrade(t.id)}
+                                aria-label="Delete trade"
+                                className="text-[#6B7280] hover:text-red-400 transition-colors p-0.5"
+                              >
+                                <Trash2 className="w-3 h-3" />
+                              </button>
+                            </div>
+                          </div>
                         </div>
                         );
                       })}

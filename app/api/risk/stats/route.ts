@@ -39,9 +39,31 @@ export async function GET(req: NextRequest) {
     .maybeSingle();
 
   const rawBalance = connection?.balance as string | null;
-  const accountBalance = rawBalance
+  let accountBalance = rawBalance
     ? parseFloat(rawBalance.replace(/[$,]/g, "")) || null
     : null;
+
+  // No broker balance — fall back to the user's manually-entered account
+  // size plus all-time realized P&L, so position sizing works before a
+  // real broker is connected.
+  let usingManualBalance = false;
+  if (accountBalance == null) {
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("account_size")
+      .eq("id", user.id)
+      .maybeSingle();
+
+    if (profile?.account_size != null) {
+      const { data: allTrades } = await supabase
+        .from("trades")
+        .select("pnl")
+        .eq("user_id", user.id);
+      const allTimePnl = (allTrades ?? []).reduce((s, t) => s + (t.pnl ?? 0), 0);
+      accountBalance = Number(profile.account_size) + allTimePnl;
+      usingManualBalance = true;
+    }
+  }
 
   // Try MetaApi for open floating PnL
   let openFloatingPnl = 0;
@@ -72,6 +94,7 @@ export async function GET(req: NextRequest) {
 
   return NextResponse.json({
     brokerConnected,
+    usingManualBalance,
     accountBalance,
     today: {
       pnl: todayPnl,
