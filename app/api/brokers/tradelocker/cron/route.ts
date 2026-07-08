@@ -197,11 +197,20 @@ async function syncConnection(
 }
 
 // ── Cron handler ─────────────────────────────────────────────────────────────
-// Secured by CRON_SECRET — set this in Vercel env vars and add to vercel.json
+// Secured by CRON_SECRET — set this in Vercel env vars. Vercel's own cron
+// (daily, per vercel.json) sends it as `Authorization: Bearer <secret>`.
+// An external scheduler (e.g. cron-job.org) hitting this on a tighter
+// interval can instead pass it as a `?secret=` query param, since some
+// simple schedulers don't support custom headers.
 
 export async function GET(req: NextRequest) {
-  const secret = req.headers.get("authorization");
-  if (!process.env.CRON_SECRET || secret !== `Bearer ${process.env.CRON_SECRET}`) {
+  const expected = process.env.CRON_SECRET;
+  const authHeader = req.headers.get("authorization");
+  const querySecret = req.nextUrl.searchParams.get("secret");
+  const authorized =
+    !!expected && (authHeader === `Bearer ${expected}` || querySecret === expected);
+
+  if (!authorized) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
