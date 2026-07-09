@@ -1,6 +1,7 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextRequest, NextResponse } from "next/server";
 import { PAYMENTS_ENABLED } from "@/lib/payments";
+import { COMING_SOON, EARLY_ACCESS_COOKIE, EARLY_ACCESS_MAX_AGE, isValidAccessCode } from "@/lib/early-access";
 
 export async function middleware(request: NextRequest) {
   let supabaseResponse = NextResponse.next({ request });
@@ -30,6 +31,77 @@ export async function middleware(request: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser();
 
   const { pathname } = request.nextUrl;
+
+  // ── Early access / "coming soon" gate ───────────────────────────────────────
+  if (COMING_SOON) {
+    const carryOverCookies = (res: NextResponse) => {
+      supabaseResponse.cookies.getAll().forEach((c) => res.cookies.set(c));
+      return res;
+    };
+
+    const accessParam = request.nextUrl.searchParams.get("access");
+    const hasAccessCookie = isValidAccessCode(request.cookies.get(EARLY_ACCESS_COOKIE)?.value);
+
+    // A valid ?access=CODE link grants access and persists it via cookie,
+    // then redirects to the same URL with the code stripped out.
+    if (!hasAccessCookie && isValidAccessCode(accessParam)) {
+      const cleanUrl = request.nextUrl.clone();
+      cleanUrl.searchParams.delete("access");
+      const res = carryOverCookies(NextResponse.redirect(cleanUrl));
+      res.cookies.set(EARLY_ACCESS_COOKIE, accessParam!, {
+        httpOnly: true,
+        secure: true,
+        sameSite: "lax",
+        maxAge: EARLY_ACCESS_MAX_AGE,
+        path: "/",
+      });
+      return res;
+    }
+
+    const granted = hasAccessCookie || isValidAccessCode(accessParam);
+
+    // Public signup stays disabled while in early access, regardless of
+    // whether the visitor has a valid access code.
+    const isRegisterRoute =
+      pathname.startsWith("/register") || pathname.startsWith("/api/auth/register");
+
+    // Everything that isn't the landing page ("/") or an API/static route is
+    // considered an "app page" and is locked behind the access code. API
+    // routes are left reachable — they're either needed for infrastructure
+    // (cron, webhooks) or already independently auth-checked.
+    const isAppPage =
+      pathname === "/login" || pathname.startsWith("/login/") ||
+      pathname === "/forgot-password" || pathname.startsWith("/forgot-password/") ||
+      pathname === "/reset-password" || pathname.startsWith("/reset-password/") ||
+      pathname.startsWith("/dashboard")     ||
+      pathname.startsWith("/trading")       ||
+      pathname.startsWith("/journal")       ||
+      pathname.startsWith("/analytics")     ||
+      pathname.startsWith("/brokers")       ||
+      pathname.startsWith("/edge")          ||
+      pathname.startsWith("/klar-ai")       ||
+      pathname.startsWith("/notebook")      ||
+      pathname.startsWith("/refuge")        ||
+      pathname.startsWith("/settings")      ||
+      pathname.startsWith("/risk")          ||
+      pathname.startsWith("/strategies")    ||
+      pathname.startsWith("/replay")        ||
+      pathname.startsWith("/calendar")      ||
+      pathname.startsWith("/trading-plans") ||
+      pathname.startsWith("/ai-coach")      ||
+      pathname.startsWith("/achievements")  ||
+      pathname.startsWith("/notes")         ||
+      pathname.startsWith("/plans")         ||
+      pathname.startsWith("/checkout")      ||
+      pathname.startsWith("/choose-plan");
+
+    if (isRegisterRoute || (isAppPage && !granted)) {
+      const homeUrl = request.nextUrl.clone();
+      homeUrl.pathname = "/";
+      homeUrl.search = "";
+      return carryOverCookies(NextResponse.redirect(homeUrl));
+    }
+  }
 
   // ── Protected dashboard routes ──────────────────────────────────────────────
   const isDashboard =
