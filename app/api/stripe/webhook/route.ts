@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import Stripe from "stripe";
+import type Stripe from "stripe";
 import { createServiceClient } from "@/lib/supabase/server";
+import { getStripe } from "@/lib/stripe";
 
 export const dynamic = "force-dynamic";
 
@@ -16,11 +17,10 @@ function planFromPriceId(priceId: string): string | null {
 }
 
 export async function POST(req: NextRequest) {
-  if (!process.env.STRIPE_SECRET_KEY || !process.env.STRIPE_WEBHOOK_SECRET) {
+  const stripe = getStripe();
+  if (!stripe || !process.env.STRIPE_WEBHOOK_SECRET) {
     return NextResponse.json({ error: "Payments disabled" }, { status: 503 });
   }
-
-  const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 
   const body = await req.text();
   const sig  = req.headers.get("stripe-signature");
