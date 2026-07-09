@@ -12,6 +12,7 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { getBiome } from "@/lib/biomes";
 import { getBrowserTimezone, getLocalDateString } from "@/lib/timezone";
+import { netPnl } from "@/lib/trade-pnl";
 
 const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
@@ -22,6 +23,12 @@ const EMOTIONS = [
   { icon: Meh, label: "Neutral", value: "neutral", color: "#6B7280" },
   { icon: Frown, label: "Anxious", value: "anxious", color: "#F59E0B" },
   { icon: Frown, label: "Frustrated", value: "frustrated", color: "#EF4444" },
+];
+const CLOSE_TYPES = [
+  { value: "tp", label: "TP hit" },
+  { value: "sl", label: "SL hit" },
+  { value: "manual", label: "Manual close" },
+  { value: "breakeven", label: "Breakeven" },
 ];
 
 interface Trade {
@@ -38,6 +45,11 @@ interface Trade {
   exit_price: number | null;
   volume: number | null;
   source: string;
+  take_profit: number | null;
+  stop_loss: number | null;
+  commission: number | null;
+  swap: number | null;
+  close_type: string | null;
 }
 
 interface CalendarEntry { pnl: number; trades: number; }
@@ -266,10 +278,16 @@ function AddTradeModal({ trade, onClose, onAdded }: { trade?: Trade; onClose: ()
     volume: trade.volume != null ? String(trade.volume) : "",
     closed_at: new Date(trade.closed_at).toISOString().slice(0, 16),
     notes: trade.notes ?? "", grade: trade.grade ?? "", emotion: trade.emotion ?? "",
+    take_profit: trade.take_profit != null ? String(trade.take_profit) : "",
+    stop_loss: trade.stop_loss != null ? String(trade.stop_loss) : "",
+    commission: trade.commission != null ? String(trade.commission) : "",
+    swap: trade.swap != null ? String(trade.swap) : "",
+    close_type: trade.close_type ?? "",
   } : {
     symbol: "", direction: "long", entry_price: "", exit_price: "",
     pnl: "", volume: "", closed_at: new Date().toISOString().slice(0, 16),
     notes: "", grade: "", emotion: "",
+    take_profit: "", stop_loss: "", commission: "", swap: "", close_type: "",
   });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -295,19 +313,30 @@ function AddTradeModal({ trade, onClose, onAdded }: { trade?: Trade; onClose: ()
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setLoading(true);
     setError(null);
+
+    if (!form.volume) {
+      setError("Volume / lot size is required");
+      return;
+    }
+
+    setLoading(true);
     const payload = {
       symbol: form.symbol,
       direction: form.direction,
       entry_price: form.entry_price ? parseFloat(form.entry_price) : null,
       exit_price: form.exit_price ? parseFloat(form.exit_price) : null,
       pnl: form.pnl ? parseFloat(form.pnl) : null,
-      volume: form.volume ? parseFloat(form.volume) : null,
+      volume: parseFloat(form.volume),
       closed_at: new Date(form.closed_at).toISOString(),
       notes: form.notes || null,
       grade: form.grade || null,
       emotion: form.emotion || null,
+      take_profit: form.take_profit ? parseFloat(form.take_profit) : null,
+      stop_loss: form.stop_loss ? parseFloat(form.stop_loss) : null,
+      commission: form.commission ? parseFloat(form.commission) : 0,
+      swap: form.swap ? parseFloat(form.swap) : 0,
+      close_type: form.close_type || null,
     };
     const res = isEdit
       ? await fetch(`/api/journal/trades/${trade.id}`, {
@@ -404,8 +433,39 @@ function AddTradeModal({ trade, onClose, onAdded }: { trade?: Trade; onClose: ()
               <input type="number" step="any" value={form.exit_price} onChange={set("exit_price")} placeholder="0.00" className={inputCls} />
             </div>
             <div>
+              <label className="block text-xs text-[#6B7280] mb-1.5">Volume / Lots *</label>
+              <input type="number" step="any" min="0" value={form.volume} onChange={set("volume")} placeholder="0.10" required className={inputCls} />
+            </div>
+          </div>
+          <div className="grid grid-cols-3 gap-3">
+            <div>
+              <label className="block text-xs text-[#6B7280] mb-1.5">Take Profit</label>
+              <input type="number" step="any" value={form.take_profit} onChange={set("take_profit")} placeholder="0.00" className={inputCls} />
+            </div>
+            <div>
+              <label className="block text-xs text-[#6B7280] mb-1.5">Stop Loss</label>
+              <input type="number" step="any" value={form.stop_loss} onChange={set("stop_loss")} placeholder="0.00" className={inputCls} />
+            </div>
+            <div>
               <label className="block text-xs text-[#6B7280] mb-1.5">P&L ($) *</label>
               <input type="number" step="any" value={form.pnl} onChange={set("pnl")} placeholder="-0.00 for a loss" required className={inputCls} />
+            </div>
+          </div>
+          <div className="grid grid-cols-3 gap-3">
+            <div>
+              <label className="block text-xs text-[#6B7280] mb-1.5">Commission ($)</label>
+              <input type="number" step="any" value={form.commission} onChange={set("commission")} placeholder="0.00" className={inputCls} />
+            </div>
+            <div>
+              <label className="block text-xs text-[#6B7280] mb-1.5">Swap ($)</label>
+              <input type="number" step="any" value={form.swap} onChange={set("swap")} placeholder="0.00" className={inputCls} />
+            </div>
+            <div>
+              <label className="block text-xs text-[#6B7280] mb-1.5">Close Type</label>
+              <select value={form.close_type} onChange={set("close_type")} className={inputCls}>
+                <option value="">—</option>
+                {CLOSE_TYPES.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}
+              </select>
             </div>
           </div>
           <div className="grid grid-cols-2 gap-3">
@@ -495,7 +555,7 @@ function TradeCard({ trade, expanded, onToggle, onUpdate, onEdit, onDelete }: {
   };
 
   const hasPnl = trade.pnl != null;
-  const pnl = trade.pnl ?? 0;
+  const pnl = hasPnl ? netPnl(trade) : 0;
   const isWin = hasPnl && pnl >= 0;
   const closedTime = new Date(trade.closed_at).toLocaleString("en-US", {
     month: "short", day: "numeric", hour: "2-digit", minute: "2-digit", hour12: false,
@@ -613,7 +673,7 @@ function TradeCard({ trade, expanded, onToggle, onUpdate, onEdit, onDelete }: {
 
           {/* Prices */}
           {(trade.entry_price != null || trade.exit_price != null) && (
-            <div className="flex gap-4 text-[11px]">
+            <div className="flex gap-4 text-[11px] flex-wrap">
               {trade.entry_price != null && (
                 <div><p className="text-[#6B7280]">Entry</p><p className="text-[#F2F0EB] font-medium">{trade.entry_price}</p></div>
               )}
@@ -622,6 +682,27 @@ function TradeCard({ trade, expanded, onToggle, onUpdate, onEdit, onDelete }: {
               )}
               {trade.volume != null && (
                 <div><p className="text-[#6B7280]">Volume</p><p className="text-[#F2F0EB] font-medium">{trade.volume}</p></div>
+              )}
+              {trade.take_profit != null && (
+                <div><p className="text-[#6B7280]">TP</p><p className="text-[#F2F0EB] font-medium">{trade.take_profit}</p></div>
+              )}
+              {trade.stop_loss != null && (
+                <div><p className="text-[#6B7280]">SL</p><p className="text-[#F2F0EB] font-medium">{trade.stop_loss}</p></div>
+              )}
+            </div>
+          )}
+
+          {/* Fees + close type */}
+          {(trade.commission || trade.swap || trade.close_type) && (
+            <div className="flex gap-4 text-[11px] flex-wrap">
+              {!!trade.commission && (
+                <div><p className="text-[#6B7280]">Commission</p><p className="text-[#F2F0EB] font-medium">${trade.commission.toFixed(2)}</p></div>
+              )}
+              {!!trade.swap && (
+                <div><p className="text-[#6B7280]">Swap</p><p className="text-[#F2F0EB] font-medium">{trade.swap >= 0 ? "+" : ""}${trade.swap.toFixed(2)}</p></div>
+              )}
+              {trade.close_type && (
+                <div><p className="text-[#6B7280]">Closed via</p><p className="text-[#F2F0EB] font-medium">{CLOSE_TYPES.find(c => c.value === trade.close_type)?.label ?? trade.close_type}</p></div>
               )}
             </div>
           )}
@@ -670,9 +751,9 @@ function computeMoodBreakdown(trades: Trade[]): MoodStats[] {
   }
   return Object.entries(groups)
     .map(([refugeMood, items]) => {
-      const pnls     = items.map(t => t.pnl ?? 0);
+      const pnls     = items.map(t => netPnl(t));
       const avgPnl   = pnls.reduce((a, b) => a + b, 0) / pnls.length;
-      const wins     = items.filter(t => (t.pnl ?? 0) > 0).length;
+      const wins     = items.filter(t => netPnl(t) > 0).length;
       const winRate  = wins / items.length;
       const vols     = items.filter(t => t.volume != null).map(t => t.volume!);
       const avgVolume = vols.length > 0 ? vols.reduce((a, b) => a + b, 0) / vols.length : null;
@@ -839,13 +920,13 @@ export default function JournalContent() {
   const totalPnL = Object.values(calendar).reduce((a, d) => a + d.pnl, 0);
   const winDays = Object.values(calendar).filter((d) => d.pnl > 0).length;
   const totalDays = Object.values(calendar).filter((d) => d.trades > 0).length;
-  const wins = trades.filter((t) => (t.pnl ?? 0) > 0).length;
-  const losses = trades.filter((t) => (t.pnl ?? 0) < 0).length;
+  const wins = trades.filter((t) => netPnl(t) > 0).length;
+  const losses = trades.filter((t) => netPnl(t) < 0).length;
   const avgWin = wins > 0
-    ? trades.filter((t) => (t.pnl ?? 0) > 0).reduce((a, t) => a + (t.pnl ?? 0), 0) / wins
+    ? trades.filter((t) => netPnl(t) > 0).reduce((a, t) => a + netPnl(t), 0) / wins
     : null;
   const avgLoss = losses > 0
-    ? trades.filter((t) => (t.pnl ?? 0) < 0).reduce((a, t) => a + (t.pnl ?? 0), 0) / losses
+    ? trades.filter((t) => netPnl(t) < 0).reduce((a, t) => a + netPnl(t), 0) / losses
     : null;
 
   const moodBreakdown = computeMoodBreakdown(trades);
@@ -1007,7 +1088,7 @@ export default function JournalContent() {
                         <p className="text-[#6B7280]">Win Rate</p>
                         <p className="text-[#22C55E] font-bold">
                           {selectedDayTrades.length > 0
-                            ? `${Math.round((selectedDayTrades.filter((t) => (t.pnl ?? 0) > 0).length / selectedDayTrades.length) * 100)}%`
+                            ? `${Math.round((selectedDayTrades.filter((t) => netPnl(t) > 0).length / selectedDayTrades.length) * 100)}%`
                             : "—"}
                         </p>
                       </div>
@@ -1017,7 +1098,8 @@ export default function JournalContent() {
                     <div className="space-y-1.5 mt-2">
                       {selectedDayTrades.map((t) => {
                         const tHasPnl = t.pnl != null;
-                        const tIsWin = tHasPnl && (t.pnl ?? 0) >= 0;
+                        const tNetPnl = tHasPnl ? netPnl(t) : 0;
+                        const tIsWin = tHasPnl && tNetPnl >= 0;
                         return (
                         <div key={t.id} className="flex items-center justify-between px-3 py-2 bg-white/[0.02] rounded-xl">
                           <div className="flex items-center gap-2 min-w-0">
@@ -1027,7 +1109,7 @@ export default function JournalContent() {
                           </div>
                           <div className="flex items-center gap-2 flex-shrink-0">
                             <span className={cn("text-xs font-bold", !tHasPnl ? "text-[#6B7280]" : tIsWin ? "text-[#22C55E]" : "text-red-400")}>
-                              {!tHasPnl ? "Pending" : `${tIsWin ? "+" : ""}$${Math.abs(t.pnl ?? 0).toFixed(2)}`}
+                              {!tHasPnl ? "Pending" : `${tIsWin ? "+" : ""}$${Math.abs(tNetPnl).toFixed(2)}`}
                             </span>
                             <div className="flex items-center gap-1">
                               {t.source === "manual" && (

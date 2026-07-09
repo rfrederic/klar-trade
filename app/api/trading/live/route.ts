@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createServerClient, createServiceClient } from "@/lib/supabase/server";
 import { resolveUserTimezone } from "@/lib/timezone-server";
 import { startOfLocalDayUtc } from "@/lib/timezone";
+import { netPnl } from "@/lib/trade-pnl";
 
 const MT_CLIENT    = "https://mt-client-api-v1.agiliumtrade.agiliumtrade.ai";
 const MT_PROVISION = "https://mt-provisioning-api-v1.agiliumtrade.agiliumtrade.ai";
@@ -158,11 +159,11 @@ export async function GET(req: NextRequest) {
   const todayStart = startOfLocalDayUtc(timeZone);
   const { data: todayTrades } = await supabase
     .from("trades")
-    .select("pnl")
+    .select("pnl, commission, swap")
     .eq("user_id", user.id)
     .gte("closed_at", todayStart.toISOString());
 
-  const todayPnl = (todayTrades ?? []).reduce((s, t) => s + (t.pnl ?? 0), 0);
+  const todayPnl = (todayTrades ?? []).reduce((s, t) => s + netPnl(t), 0);
 
   // ── TradeLocker connections ───────────────────────────────────────────────
   const { data: tlConnections } = await supabase

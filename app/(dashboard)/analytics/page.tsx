@@ -11,6 +11,7 @@ import { getBiome } from "@/lib/biomes";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { getBrowserTimezone, getLocalDateString } from "@/lib/timezone";
+import { netPnl } from "@/lib/trade-pnl";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -173,9 +174,9 @@ export default function AnalyticsPage() {
       const byDate: Record<string, number> = {};
       for (const d of [curr, prev]) {
         if (!d?.trades) continue;
-        for (const t of d.trades as { closed_at: string; pnl: number | null }[]) {
+        for (const t of d.trades as { closed_at: string; pnl: number | null; commission: number | null; swap: number | null }[]) {
           const date = getLocalDateString(t.closed_at, tz);
-          byDate[date] = (byDate[date] ?? 0) + (t.pnl ?? 0);
+          byDate[date] = (byDate[date] ?? 0) + netPnl(t);
         }
       }
       setDailyPnL(byDate);

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServerClient, createServiceClient } from "@/lib/supabase/server";
+import { netPnl } from "@/lib/trade-pnl";
 import Groq from "groq-sdk";
 
 export const dynamic = "force-dynamic";
@@ -68,7 +69,7 @@ export async function POST(req: NextRequest) {
   const [{ data: trades }, { data: plans }] = await Promise.all([
     supabase
       .from("trades")
-      .select("setup, direction, pnl, emotion, grade, followed_plan, closed_at")
+      .select("setup, direction, pnl, commission, swap, emotion, grade, followed_plan, closed_at")
       .eq("user_id", user.id)
       .gte("closed_at", thirtyDaysAgo.toISOString())
       .order("closed_at", { ascending: false })
@@ -81,9 +82,9 @@ export async function POST(req: NextRequest) {
   ]);
 
   const totalTrades = (trades ?? []).length;
-  const winners = (trades ?? []).filter((t) => (t.pnl ?? 0) > 0);
+  const winners = (trades ?? []).filter((t) => netPnl(t) > 0);
   const winRate = totalTrades > 0 ? Math.round((winners.length / totalTrades) * 100) : 0;
-  const totalPnl = (trades ?? []).reduce((s, t) => s + (t.pnl ?? 0), 0);
+  const totalPnl = (trades ?? []).reduce((s, t) => s + netPnl(t), 0);
   const followedPlanCount = (trades ?? []).filter((t) => t.followed_plan).length;
   const disciplineRate = totalTrades > 0 ? Math.round((followedPlanCount / totalTrades) * 100) : 0;
 
@@ -92,8 +93,8 @@ export async function POST(req: NextRequest) {
     const k = t.setup ?? "Unknown";
     if (!setupMap[k]) setupMap[k] = { wins: 0, total: 0, pnl: 0 };
     setupMap[k].total++;
-    if ((t.pnl ?? 0) > 0) setupMap[k].wins++;
-    setupMap[k].pnl += t.pnl ?? 0;
+    if (netPnl(t) > 0) setupMap[k].wins++;
+    setupMap[k].pnl += netPnl(t);
   }
 
   const emotionMap: Record<string, { wins: number; total: number }> = {};
@@ -101,7 +102,7 @@ export async function POST(req: NextRequest) {
     if (!t.emotion) continue;
     if (!emotionMap[t.emotion]) emotionMap[t.emotion] = { wins: 0, total: 0 };
     emotionMap[t.emotion].total++;
-    if ((t.pnl ?? 0) > 0) emotionMap[t.emotion].wins++;
+    if (netPnl(t) > 0) emotionMap[t.emotion].wins++;
   }
 
   const setupLines = Object.entries(setupMap)

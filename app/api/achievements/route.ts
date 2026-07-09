@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createServerClient, createServiceClient } from "@/lib/supabase/server";
 import { resolveUserTimezone } from "@/lib/timezone-server";
 import { getLocalDateString, getZonedParts } from "@/lib/timezone";
+import { netPnl } from "@/lib/trade-pnl";
 
 export interface Achievement {
   id: string;
@@ -18,6 +19,8 @@ export interface Achievement {
 
 interface Trade {
   pnl: number | null;
+  commission: number | null;
+  swap: number | null;
   closed_at: string;
   followed_plan: boolean | null;
   emotion: string | null;
@@ -29,7 +32,7 @@ interface Trade {
 function longestWinStreak(trades: Trade[]): number {
   let best = 0, cur = 0;
   for (const t of trades) {
-    if ((t.pnl ?? 0) > 0) { cur++; best = Math.max(best, cur); }
+    if (netPnl(t) > 0) { cur++; best = Math.max(best, cur); }
     else cur = 0;
   }
   return best;
@@ -40,7 +43,7 @@ function profitableMonths(trades: Trade[], timeZone: string): number {
   for (const t of trades) {
     const { year, month } = getZonedParts(t.closed_at, timeZone);
     const key = `${year}-${String(month).padStart(2, "0")}`;
-    months[key] = (months[key] ?? 0) + (t.pnl ?? 0);
+    months[key] = (months[key] ?? 0) + netPnl(t);
   }
   return Object.values(months).filter((v) => v > 0).length;
 }
@@ -49,7 +52,7 @@ function bestSingleDay(trades: Trade[], timeZone: string): number {
   const days: Record<string, number> = {};
   for (const t of trades) {
     const key = getLocalDateString(t.closed_at, timeZone);
-    days[key] = (days[key] ?? 0) + (t.pnl ?? 0);
+    days[key] = (days[key] ?? 0) + netPnl(t);
   }
   return Math.max(0, ...Object.values(days));
 }
@@ -58,7 +61,7 @@ function hadBounceBack(trades: Trade[], timeZone: string): boolean {
   const days: Record<string, number> = {};
   for (const t of trades) {
     const key = getLocalDateString(t.closed_at, timeZone);
-    days[key] = (days[key] ?? 0) + (t.pnl ?? 0);
+    days[key] = (days[key] ?? 0) + netPnl(t);
   }
   const sortedDays = Object.entries(days).sort(([a], [b]) => a.localeCompare(b));
   for (let i = 1; i < sortedDays.length; i++) {
@@ -76,13 +79,13 @@ export async function GET(req: NextRequest) {
   const timeZone = await resolveUserTimezone(supabase, user.id, req.nextUrl.searchParams.get("tz"));
   const { data } = await supabase
     .from("trades")
-    .select("pnl, closed_at, followed_plan, emotion, notes, grade, setup")
+    .select("pnl, commission, swap, closed_at, followed_plan, emotion, notes, grade, setup")
     .eq("user_id", user.id)
     .order("closed_at", { ascending: true });
 
   const trades: Trade[] = data ?? [];
   const total = trades.length;
-  const wins = trades.filter((t) => (t.pnl ?? 0) > 0);
+  const wins = trades.filter((t) => netPnl(t) > 0);
   const winRate = total >= 20 ? (wins.length / total) * 100 : 0;
   const winStreak = longestWinStreak(trades);
   const followedCount = trades.filter((t) => t.followed_plan).length;

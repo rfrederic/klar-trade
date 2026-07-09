@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServerClient, createServiceClient } from "@/lib/supabase/server";
+import { netPnl } from "@/lib/trade-pnl";
 
 export async function GET() {
   const authClient = await createServerClient();
@@ -19,15 +20,15 @@ export async function GET() {
   const { data: trades } = planNames.length > 0
     ? await supabase
         .from("trades")
-        .select("setup, pnl")
+        .select("setup, pnl, commission, swap")
         .eq("user_id", user.id)
         .in("setup", planNames)
     : { data: [] };
 
   const plansWithStats = (plans ?? []).map((plan) => {
     const planTrades = (trades ?? []).filter((t) => t.setup === plan.name);
-    const winners = planTrades.filter((t) => (t.pnl ?? 0) > 0);
-    const totalPnl = planTrades.reduce((s, t) => s + (t.pnl ?? 0), 0);
+    const winners = planTrades.filter((t) => netPnl(t) > 0);
+    const totalPnl = planTrades.reduce((s, t) => s + netPnl(t), 0);
     const winRate = planTrades.length > 0 ? Math.round((winners.length / planTrades.length) * 100) : 0;
     return { ...plan, winRate, totalPnl, tradeCount: planTrades.length };
   });

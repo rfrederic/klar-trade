@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createServerClient, createServiceClient } from "@/lib/supabase/server";
 import { resolveUserTimezone } from "@/lib/timezone-server";
 import { startOfLocalDayUtc, startOfLocalYearUtc } from "@/lib/timezone";
+import { netPnl } from "@/lib/trade-pnl";
 
 const MT_CLIENT = "https://mt-client-api-v1.agiliumtrade.agiliumtrade.ai";
 const MT_PROVISION = "https://mt-provisioning-api-v1.agiliumtrade.agiliumtrade.ai";
@@ -34,36 +35,36 @@ export async function GET(req: NextRequest) {
   // Always compute stats from trades table (works with or without MT5)
   const { data: dbTrades } = await supabase
     .from("trades")
-    .select("pnl, closed_at, symbol, direction, setup, emotion, grade, followed_plan")
+    .select("pnl, commission, swap, closed_at, symbol, direction, setup, emotion, grade, followed_plan")
     .eq("user_id", user.id)
     .gte("closed_at", from.toISOString())
     .order("closed_at", { ascending: true });
 
   const trades = dbTrades ?? [];
-  const wins = trades.filter((t) => (t.pnl ?? 0) > 0);
-  const losses = trades.filter((t) => (t.pnl ?? 0) < 0);
+  const wins = trades.filter((t) => netPnl(t) > 0);
+  const losses = trades.filter((t) => netPnl(t) < 0);
   const totalTrades = trades.length;
-  const totalPnl = trades.reduce((s, t) => s + (t.pnl ?? 0), 0);
+  const totalPnl = trades.reduce((s, t) => s + netPnl(t), 0);
   const winRate = totalTrades > 0 ? ((wins.length / totalTrades) * 100).toFixed(1) : null;
-  const grossWin = wins.reduce((s, t) => s + (t.pnl ?? 0), 0);
-  const grossLoss = Math.abs(losses.reduce((s, t) => s + (t.pnl ?? 0), 0));
+  const grossWin = wins.reduce((s, t) => s + netPnl(t), 0);
+  const grossLoss = Math.abs(losses.reduce((s, t) => s + netPnl(t), 0));
   const profitFactor = grossLoss > 0 ? (grossWin / grossLoss).toFixed(2) : null;
 
   // Today's trades
   const todayStart = startOfLocalDayUtc(timeZone);
   const { data: todayDbTrades } = await supabase
     .from("trades")
-    .select("pnl")
+    .select("pnl, commission, swap")
     .eq("user_id", user.id)
     .gte("closed_at", todayStart.toISOString());
-  const todayPnl = (todayDbTrades ?? []).reduce((s, t) => s + (t.pnl ?? 0), 0);
+  const todayPnl = (todayDbTrades ?? []).reduce((s, t) => s + netPnl(t), 0);
   const todayCount = todayDbTrades?.length ?? 0;
 
   // Equity curve from trades table
   let running = 0;
   const equityCurve: number[] = [];
   for (const t of trades) {
-    running += t.pnl ?? 0;
+    running += netPnl(t);
     equityCurve.push(Math.round(running * 100) / 100);
   }
 
@@ -71,16 +72,19 @@ export async function GET(req: NextRequest) {
   const recentTrades = [...trades]
     .reverse()
     .slice(0, 10)
-    .map((t) => ({
-      instrument: t.symbol ?? "—",
-      direction: t.direction === "long" ? "Long" : "Short",
-      pnl: (t.pnl ?? 0) >= 0 ? `+$${(t.pnl ?? 0).toFixed(2)}` : `-$${Math.abs(t.pnl ?? 0).toFixed(2)}`,
-      outcome: (t.pnl ?? 0) >= 0 ? "Win" : "Loss",
-      setup: t.setup ?? "",
-      emotion: t.emotion ?? "",
-      grade: t.grade ?? "",
-      closedAt: new Date(t.closed_at).toLocaleDateString("en-US", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }),
-    }));
+    .map((t) => {
+      const net = netPnl(t);
+      return {
+        instrument: t.symbol ?? "—",
+        direction: t.direction === "long" ? "Long" : "Short",
+        pnl: net >= 0 ? `+$${net.toFixed(2)}` : `-$${Math.abs(net).toFixed(2)}`,
+        outcome: net >= 0 ? "Win" : "Loss",
+        setup: t.setup ?? "",
+        emotion: t.emotion ?? "",
+        grade: t.grade ?? "",
+        closedAt: new Date(t.closed_at).toLocaleDateString("en-US", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }),
+      };
+    });
 
   // Try MetaApi for live balance/equity (non-blocking — graceful failure)
   let liveBalance: number | null = null;
@@ -122,7 +126,7 @@ export async function GET(req: NextRequest) {
             const startingBalance = liveBalance - totalPnl;
             let rb = startingBalance;
             for (let i = 0; i < equityCurve.length; i++) {
-              rb += trades[i].pnl ?? 0;
+              rb += netPnl(trades[i]);
               equityCurve[i] = Math.round(rb * 100) / 100;
             }
           }
@@ -162,10 +166,10 @@ export async function GET(req: NextRequest) {
     if (profile?.account_size != null) {
       const { data: priorTrades } = await supabase
         .from("trades")
-        .select("pnl")
+        .select("pnl, commission, swap")
         .eq("user_id", user.id)
         .lt("closed_at", from.toISOString());
-      const pnlBeforeRange = (priorTrades ?? []).reduce((s, t) => s + (t.pnl ?? 0), 0);
+      const pnlBeforeRange = (priorTrades ?? []).reduce((s, t) => s + netPnl(t), 0);
 
       const startingBalance = Number(profile.account_size) + pnlBeforeRange;
       liveBalance = startingBalance + totalPnl;
@@ -174,7 +178,7 @@ export async function GET(req: NextRequest) {
 
       let rb = startingBalance;
       for (let i = 0; i < equityCurve.length; i++) {
-        rb += trades[i].pnl ?? 0;
+        rb += netPnl(trades[i]);
         equityCurve[i] = Math.round(rb * 100) / 100;
       }
     }

@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServerClient, createServiceClient } from "@/lib/supabase/server";
 
+const CLOSE_TYPES = ["tp", "sl", "manual", "breakeven"] as const;
+
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
 
@@ -9,11 +11,19 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const body = await req.json();
+
+  if (body.close_type != null && !CLOSE_TYPES.includes(body.close_type)) {
+    return NextResponse.json({ error: "Invalid close_type" }, { status: 400 });
+  }
+
   const editableAnytime = ["emotion", "grade", "notes", "followed_plan", "setup", "tags"];
   // Core trade data may only be edited for manually-entered trades — editing
   // a broker-synced trade's price/size here would drift from the broker's
   // own record and could be re-clobbered (or duplicated) on the next sync.
-  const manualOnly = ["symbol", "direction", "entry_price", "exit_price", "pnl", "volume", "closed_at"];
+  const manualOnly = [
+    "symbol", "direction", "entry_price", "exit_price", "pnl", "volume", "closed_at",
+    "take_profit", "stop_loss", "commission", "swap", "close_type",
+  ];
 
   const update: Record<string, unknown> = {};
   for (const key of editableAnytime) {

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createServerClient, createServiceClient } from "@/lib/supabase/server";
 import { resolveUserTimezone } from "@/lib/timezone-server";
 import { startOfLocalDayUtc } from "@/lib/timezone";
+import { netPnl } from "@/lib/trade-pnl";
 
 const MT_CLIENT = "https://mt-client-api-v1.agiliumtrade.agiliumtrade.ai";
 const MT_PROVISION = "https://mt-provisioning-api-v1.agiliumtrade.agiliumtrade.ai";
@@ -17,16 +18,16 @@ export async function GET(req: NextRequest) {
 
   const { data: todayTrades } = await supabase
     .from("trades")
-    .select("pnl")
+    .select("pnl, commission, swap")
     .eq("user_id", user.id)
     .gte("closed_at", todayStart.toISOString());
 
   const trades = todayTrades ?? [];
-  const todayPnl = trades.reduce((s, t) => s + (t.pnl ?? 0), 0);
+  const todayPnl = trades.reduce((s, t) => s + netPnl(t), 0);
   const todayCount = trades.length;
-  const todayLosses = trades.filter((t) => (t.pnl ?? 0) < 0);
-  const todayGrossLoss = Math.abs(todayLosses.reduce((s, t) => s + (t.pnl ?? 0), 0));
-  const todayWins = trades.filter((t) => (t.pnl ?? 0) > 0).length;
+  const todayLosses = trades.filter((t) => netPnl(t) < 0);
+  const todayGrossLoss = Math.abs(todayLosses.reduce((s, t) => s + netPnl(t), 0));
+  const todayWins = trades.filter((t) => netPnl(t) > 0).length;
   const todayWinRate = todayCount > 0 ? Math.round((todayWins / todayCount) * 100) : null;
 
   // Get broker balance
@@ -57,9 +58,9 @@ export async function GET(req: NextRequest) {
     if (profile?.account_size != null) {
       const { data: allTrades } = await supabase
         .from("trades")
-        .select("pnl")
+        .select("pnl, commission, swap")
         .eq("user_id", user.id);
-      const allTimePnl = (allTrades ?? []).reduce((s, t) => s + (t.pnl ?? 0), 0);
+      const allTimePnl = (allTrades ?? []).reduce((s, t) => s + netPnl(t), 0);
       accountBalance = Number(profile.account_size) + allTimePnl;
       usingManualBalance = true;
     }

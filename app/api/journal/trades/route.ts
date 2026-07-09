@@ -2,6 +2,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { createServerClient, createServiceClient } from "@/lib/supabase/server";
 import { resolveUserTimezone } from "@/lib/timezone-server";
 import { getZonedParts, localMonthRangeUtc } from "@/lib/timezone";
+import { netPnl } from "@/lib/trade-pnl";
+
+const CLOSE_TYPES = ["tp", "sl", "manual", "breakeven"] as const;
 
 export async function GET(req: NextRequest) {
   const authClient = await createServerClient();
@@ -34,7 +37,7 @@ export async function GET(req: NextRequest) {
   for (const trade of trades ?? []) {
     const day = getZonedParts(trade.closed_at, timeZone).day;
     if (!calendar[day]) calendar[day] = { pnl: 0, trades: 0 };
-    calendar[day].pnl += trade.pnl ?? 0;
+    calendar[day].pnl += netPnl(trade);
     calendar[day].trades += 1;
   }
 
@@ -47,10 +50,17 @@ export async function POST(req: NextRequest) {
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const body = await req.json();
-  const { symbol, direction, entry_price, exit_price, pnl, volume, closed_at, notes, emotion, grade, followed_plan } = body;
+  const {
+    symbol, direction, entry_price, exit_price, pnl, volume, closed_at, notes, emotion, grade, followed_plan,
+    take_profit, stop_loss, commission, swap, close_type,
+  } = body;
 
   if (!symbol || !direction || !closed_at) {
     return NextResponse.json({ error: "symbol, direction and closed_at are required" }, { status: 400 });
+  }
+
+  if (close_type != null && !CLOSE_TYPES.includes(close_type)) {
+    return NextResponse.json({ error: "Invalid close_type" }, { status: 400 });
   }
 
   const supabase = createServiceClient();
@@ -70,6 +80,11 @@ export async function POST(req: NextRequest) {
       grade: grade ?? null,
       followed_plan: followed_plan ?? true,
       source: "manual",
+      take_profit: take_profit ?? null,
+      stop_loss: stop_loss ?? null,
+      commission: commission ?? 0,
+      swap: swap ?? 0,
+      close_type: close_type ?? null,
     })
     .select()
     .single();

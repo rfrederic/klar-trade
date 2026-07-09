@@ -129,7 +129,7 @@ export default function LandingPage() {
         <div className="glass rounded-2xl px-5 py-3 flex items-center justify-between shadow-card">
           <Link href="/" className="flex items-center gap-2.5">
             <div className="w-8 h-8 flex items-center justify-center">
-              <Image src="/klar-removebg-preview.png" alt="KlarTrade logo" width={48} height={48} className="object-contain" />
+              <Image src="/klar-removebg-preview.png" alt="KlarTrade logo" width={48} height={48} priority className="object-contain" />
             </div>
             <span className="text-[15px] font-bold tracking-tight">
               Klar<span className="text-[#4BA3D4]">Trade</span>
