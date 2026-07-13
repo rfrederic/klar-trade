@@ -139,7 +139,8 @@ export default function KlarAIPage() {
           </div>
         ) : (
           // Messages
-          <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4">
+          <div className="flex-1 overflow-y-auto px-6 py-4">
+            <div className="max-w-2xl mx-auto space-y-4">
             <AnimatePresence initial={false}>
               {messages.map((msg, i) => (
                 <motion.div
@@ -153,7 +154,7 @@ export default function KlarAIPage() {
                       <Sparkles className="w-3.5 h-3.5 text-[#4BA3D4]" />
                     </div>
                   )}
-                  <div className={cn("max-w-[72%]",
+                  <div className={cn("max-w-[80%]",
                     msg.role === "user"
                       ? "bg-[#03588C] text-white rounded-2xl rounded-tr-sm px-4 py-3"
                       : "glass border-l-2 border-[#03588C] rounded-2xl rounded-tl-sm px-4 py-3"
@@ -185,11 +186,13 @@ export default function KlarAIPage() {
               )}
             </AnimatePresence>
             <div ref={messagesEndRef} />
+            </div>
           </div>
         )}
 
         {/* Input bar */}
         <div className="p-4 border-t border-white/[0.05]">
+          <div className="max-w-2xl mx-auto">
           <div className="flex items-end gap-2">
             <div className="flex-1 glass rounded-2xl px-4 py-3 flex items-end gap-2">
               <textarea
@@ -214,6 +217,7 @@ export default function KlarAIPage() {
           <p className="text-[10px] text-[#6B7280] text-center mt-2">
             For education only — not financial advice. Markets involve risk.
           </p>
+          </div>
         </div>
       </div>
     </div>
