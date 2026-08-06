@@ -39,6 +39,7 @@ function PasswordStrength({ password }: { password: string }) {
 export default function RegisterPage() {
   const router = useRouter();
   const [showPw, setShowPw] = useState(false);
+  const [showConfirmPw, setShowConfirmPw] = useState(false);
   const [form, setForm] = useState({ name: "", email: "", password: "", confirm: "" });
   const [agreed, setAgreed] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -169,14 +170,19 @@ export default function RegisterPage() {
 
                   <div>
                     <label className="block text-xs font-medium text-[#6B7280] mb-1.5">Confirm password</label>
-                    <input
-                      type="password"
-                      value={form.confirm}
-                      onChange={set("confirm")}
-                      placeholder="Repeat your password"
-                      className={cn("w-full bg-white/[0.04] border rounded-xl px-4 py-3 text-sm text-[#F2F0EB] placeholder-[#6B7280] focus:outline-none transition-all",
-                        form.confirm && form.confirm !== form.password ? "border-red-500/50" : "border-white/[0.08] focus:border-[#03588C]/60")}
-                    />
+                    <div className="relative">
+                      <input
+                        type={showConfirmPw ? "text" : "password"}
+                        value={form.confirm}
+                        onChange={set("confirm")}
+                        placeholder="Repeat your password"
+                        className={cn("w-full bg-white/[0.04] border rounded-xl px-4 py-3 pr-11 text-sm text-[#F2F0EB] placeholder-[#6B7280] focus:outline-none transition-all",
+                          form.confirm && form.confirm !== form.password ? "border-red-500/50" : "border-white/[0.08] focus:border-[#03588C]/60")}
+                      />
+                      <button type="button" onClick={() => setShowConfirmPw(!showConfirmPw)} className="absolute right-3 top-1/2 -translate-y-1/2 text-[#6B7280]">
+                        {showConfirmPw ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                      </button>
+                    </div>
                   </div>
 
                   <label className="flex items-start gap-2.5 cursor-pointer">
