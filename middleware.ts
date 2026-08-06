@@ -60,8 +60,8 @@ export async function middleware(request: NextRequest) {
 
     const granted = hasAccessCookie || isValidAccessCode(accessParam);
 
-    // Public signup stays disabled while in early access, regardless of
-    // whether the visitor has a valid access code.
+    // Signup is part of the gated app during early access: it's reachable
+    // once the visitor has a valid access code, same as any other app page.
     const isRegisterRoute =
       pathname.startsWith("/register") || pathname.startsWith("/api/auth/register");
 
@@ -95,7 +95,7 @@ export async function middleware(request: NextRequest) {
       pathname.startsWith("/checkout")      ||
       pathname.startsWith("/choose-plan");
 
-    if (isRegisterRoute || (isAppPage && !granted)) {
+    if (!granted && (isRegisterRoute || isAppPage)) {
       const homeUrl = request.nextUrl.clone();
       homeUrl.pathname = "/";
       homeUrl.search = "";

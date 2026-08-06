@@ -30,7 +30,7 @@ export default function ComingSoonClient() {
       return;
     }
 
-    router.push("/login");
+    router.push("/register");
     router.refresh();
   };
 
